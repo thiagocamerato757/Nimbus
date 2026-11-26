@@ -1,0 +1,5 @@
+# A Player is an identity of their own, on at most one Roster
+
+History contains Players on no current Roster (free agents, retired, other leagues) and Players who have changed Teams, so a Player is on at most one Roster, meaning their current Team. The Team on a history row is only who they played for in that Game and never moves them; transfers are not modelled. Observed Pools travel with the Player across Teams, while team statistics use the Games that Team played, whoever was in the Lineup. Handles are reused, so when an import finds a known name playing for a Team other than the current one, it asks whether it is the same Player and remembers the answer. Removing a Player from a Roster only ends the current Team link; their Games, Player Assignments and Observed Pool stay.
+
+Roster data comes from a `rosters` file (Team and Player required, usual Role optional) or in-app editing; a roster import adds and updates but never removes. A `pools` file (Team, Player, Character) fills Declared Pools for Our Team, replacing the Declared Pool of each Player named in it and leaving others untouched. Both are previewed with name mapping.
