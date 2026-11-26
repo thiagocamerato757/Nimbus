@@ -9,8 +9,14 @@ Behaviour agreed during design that is neither a glossary term ([CONTEXT.md](../
 - The analyst records winners by hand. Winner is a correctable field, separate from Game Status. Starting the next Game from a Drafted one prompts for it (either Team, or "later").
 - While results are pending, a Best-of Series is not declared over. Its score shows "result pending".
 - A finished Series can still be corrected. A corrected winner never deletes Games; warn if Games exist past the deciding one.
-- Any Game can be voided, at any status.
 - Patch is optional on a Series and can be overridden per Game. No MVP feature uses it.
+
+## Game lifecycle
+
+- A Game goes Drafting → Drafted → Closed, and can be Voided from any status.
+- Drafted means every turn is filled or, for bans, skipped.
+- Closed requires **all** Player Assignments **and** a winner.
+- The next Game can start once the previous one is Drafted (or Closed) or Voided. Neither missing Player Assignments nor a missing winner blocks it.
 
 ## Draft
 
@@ -24,7 +30,7 @@ Behaviour agreed during design that is neither a glossary term ([CONTEXT.md](../
 
 ## Lineups and pools
 
-- Each Game has its own Lineup per Team, pre-filled from the previous Game. It may be incomplete during the draft and is required for the Game to be Closed.
+- Each Game has its own Lineup per Team, pre-filled from the previous Game. It may be incomplete during the draft, and a complete Lineup is needed before every pick can be assigned.
 - Player Assignments go only to Players in that Game's Lineup, one Character each.
 - Remaining and Available Now are both shown; the Copilot reasons on Available Now.
 - An Observed Pool is shown as an estimate, with counts and recency (for example "played 7 of last 10 games").
