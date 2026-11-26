@@ -165,7 +165,7 @@ _Avoid_: Swap
 The unavailability of a Character to a Team in a Game because of Draft Actions in earlier Games of the same Series.
 
 **Fearless Variant**:
-The Fearless rule a Series plays under, made of a Lock Reach and Lock Sources.
+The Fearless rule a Series plays under, made of a Lock Reach and Lock Sources. The picking Team reach cannot be combined with bans as a Lock Source.
 
 **Lock Reach**:
 Which Teams a Fearless Lock applies to: none, the picking Team, or both Teams.
@@ -194,7 +194,7 @@ _Avoid_: Conflict, error
 A Violation nobody has confirmed yet, typically one that appeared after a correction.
 
 **Acknowledged Violation**:
-A Violation the analyst has confirmed with a reason, either by Override or afterwards.
+A Violation the analyst has confirmed with a reason, either by Override or afterwards. The confirmation covers that rule, action and cause.
 
 **Copilot**:
 The assistant that advises one Team on its bans and picks during a Game's draft.

@@ -8,3 +8,7 @@ Supersedes the part of [ADR 0001](0001-title-agnostic-engine.md) saying that the
 
 - The variant comes only from the Title profile: one rule per Title is wrong for some tournaments and scrims.
 - The profile whitelists the allowed variants: blocks invented scrim formats that the engine already supports.
+
+## Amendment (2026-11-26): picking Team with bans is not valid
+
+Lock reach "picking Team" together with lock sources "picks and bans" is rejected with a clear error when a Custom variant is validated. No known format uses it, and inventing which Team a ban locks the Character for risks getting it wrong. Reach "both Teams" with bans stays allowed, since the lock is unambiguous. Revisit when a real format needs it.

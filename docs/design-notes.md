@@ -23,7 +23,8 @@ Behaviour agreed during design that is neither a glossary term ([CONTEXT.md](../
 - A ban turn may be skipped; a pick turn may not. A ban lasts for its Game only unless the lock sources include bans.
 - Locks apply as soon as a pick is recorded. They follow the Character, never the Player, and substitutions or swaps do not change them.
 - The locked-ban rule applies only when the Character is already locked for the opponent of the banning Team.
-- A Violation's acknowledgement covers one specific conflict: if the action or its cause changes and it still breaks a rule, it is Open again.
+- A Violation's acknowledgement covers one specific conflict (rule, action and cause): if any of them changes and a rule is still broken, it is Open again; if all match exactly again, the acknowledgement applies again.
+- Only the most recent Draft Action of the current (latest non-voided) Game can be cleared; if it has none, there is nothing to clear. Anything else is corrected by replacement. Clearing goes into the edit history.
 - The Copilot warns about Open Violations only.
 - Retired Characters are not offered for new entries; a correction can still pick one deliberately.
 - The Disabled List is set at Series creation (pre-filled from the Workspace list) and editable with an impact preview.
