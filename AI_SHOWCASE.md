@@ -1,6 +1,6 @@
 # AI-Powered Workflow: How Nimbus Was Built
 
-> Submission for the **Best AI-Powered Workflow Story** bonus prize.
+> How Nimbus is built with coding agents, documented as it happens.
 > This file is filled in as the project is built.
 
 ## The setup
@@ -10,8 +10,7 @@ Nimbus was built by a single developer using two kinds of agents with separate r
 | Role | Tool | What it did |
 |---|---|---|
 | **Planning & review** | Claude Code (terminal) | Sharpened the idea, wrote specs and split them into tickets on GitHub Issues, explored data, ran code reviews. |
-| **Execution** | **JetBrains Air** (Codex and other agents) | Implemented tickets in parallel, each in an isolated Git worktree, with changes reviewed in Air before merging. |
-| **IDE** | **PyCharm** | Reading, debugging and testing the code. |
+| **Execution** | **Codex** | Implemented tickets in parallel, each in its own Git worktree, with changes reviewed before merging. |
 
 Both agents followed the same process, the [SAIL Skills](https://github.com/SAIL-PUC-Rio/Agentic-Software-Engineering-Skills) from PUC-Rio's Software and AI Engineering Lab:
 `/grill-with-docs` → `/to-spec` → `/to-tickets` → `/implement` → `/evidence` → `/code-review`.
