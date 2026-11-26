@@ -30,10 +30,10 @@ Everything below is planned for the first release and built in the order shown u
   - *Off*: nothing carries over.
   - *Soft Fearless*: a champion is locked only for the team that picked it.
   - *Hard Fearless*: a champion picked in an earlier game is locked for **both** teams.
-  - *Custom*: any other combination, for scrim formats.
+  - *Custom*: other combinations, for scrim formats (a lock on the picking team only cannot come from bans).
 - **Disabled champions.** Champions a league has switched off can be disabled per series, pre-filled from a current list.
 - **Manual live entry.** The analyst enters picks and bans by hand. There is no live feed from the game. A countdown timer run by Nimbus comes after the MVP.
-- **Corrections and overrides.** Any pick or ban can be corrected at any time, even in an earlier game, with an edit history. An entry that breaks a rule is rejected unless the analyst overrides it with a reason, and conflicts that appear later are flagged, never changed automatically.
+- **Corrections and overrides.** Any pick or ban can be corrected at any time, even in an earlier game, and the latest entry of the current game can be undone, with an edit history. An entry that breaks a rule is rejected unless the analyst overrides it with a reason, and conflicts that appear later are flagged, never changed automatically.
 - **Side and draft position.** Recorded separately for each game, along with First Selection, so blue side is not assumed to pick first.
 - **Champion pools.** A declared pool for each of your players and an estimated, observed pool for opponents, showing how much of each is **remaining** for the series and **available now** in the current draft. A champion stops being remaining when a Fearless lock applies to the player's team or the champion is disabled, whoever played it (e.g. *mid laner: 6 champions in pool, 4 remaining, 2 available now*).
 - **Draft copilot.** Shows a ranked shortlist computed by code as soon as the draft changes, then an AI reranking with reasons, up to three options. Without a language model the shortlist still works. The coach can flag champions (priority, avoid, ban target, save for a later game) and leave short notes. It suggests the next pick or ban and explains why. The copilot never decides legality itself: it queries the rules engine through tool calls, so it cannot recommend a locked champion. It says when it relies on general knowledge instead of your data, and when it has little data on a champion.

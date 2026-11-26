@@ -6,3 +6,7 @@ Nimbus records what happened on stage, which can contradict the rules it knows b
 
 - Always reject illegal states: corrections would have to be made downstream first.
 - Always accept and flag: live typos would go unnoticed.
+
+## Amendment (2026-11-26): what an acknowledgement covers
+
+An acknowledgement stores a fingerprint of the rule, the action and the cause. The Violation is Acknowledged while they match it, and Open if any of them differs and a rule is still broken. If all three match exactly again, for example after a correction is reversed, the acknowledgement applies again. A correction followed by its reversal therefore restores the same derived state.

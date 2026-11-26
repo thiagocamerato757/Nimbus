@@ -21,6 +21,7 @@
 - LLM timeouts and retry limit, and what the coach sees when retries run out
 - Integration test against a local OpenAI-compatible server: in CI if feasible, otherwise a manual check
 - Handling a model refusal response, and fallback behaviour
+- `max_tokens` value per Model Role (tight, but leaving room for the model's thinking), and how the input upper bound is computed from the prompt
 - Verify the minimum cacheable prompt length and cache prices in the provider's docs; measure real cache hit rate
 - Cost limit for report generation, which is not tied to a Series (milestone 4)
 - Check provider data retention terms before real team data is used
