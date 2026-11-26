@@ -164,33 +164,73 @@ The vocabulary is defined in [`CONTEXT.md`](CONTEXT.md) and the architecture dec
 
 ## Getting started
 
-> Work in progress. Setup instructions will be completed as the project is built.
+Python 3.12+, uv, and Node.js 20.19+ are required. Run from this repository; no LLM or API key is needed for manual drafting.
 
-### Requirements
-- Python 3.12+ with [uv](https://docs.astral.sh/uv/)
-- Node.js 20+
-- A language model: an API key for Claude (see `.env.example`), or a local server with an OpenAI-compatible API such as Ollama. Without one, the copilot shows its code-ranked shortlist only.
-
-### Backend
 ```bash
-cd backend
 uv sync
-cp .env.example .env   # fill in your keys
-uv run fastapi dev app/main.py
+cd frontend
+npm ci
+npx playwright install chromium
+cd ..
 ```
 
-### Frontend
+Start the backend from the repository root:
+
+```bash
+uv run nimbus
+```
+
+In a second terminal:
+
 ```bash
 cd frontend
-npm install
 npm run dev
 ```
 
-### Tests
+Open http://127.0.0.1:5173. Both servers bind loopback only. Data defaults to
+`~/.local/share/nimbus/nimbus.sqlite3` (or `$XDG_DATA_HOME/nimbus`). Set
+`NIMBUS_DATA_DIR` to choose another folder. Under WSL use a Linux folder;
+startup warns for `/mnt/` storage. The SQLite database is **not encrypted**.
+
+### Verification
+
+From the repository root:
+
 ```bash
-cd backend
 uv run pytest
+uv run mypy
+uv run ruff check src scripts tests
+uv run ruff format --check src scripts tests
+cd frontend
+npm run build
+npm test
 ```
+
+Playwright starts isolated backend/frontend servers on ports 8000 and 5173;
+stop running development servers first. Its database is temporary.
+
+### Character Catalog
+
+The text-only catalog records its Data Dragon version. To update, choose an
+explicit Riot Data Dragon version and review the YAML diff:
+
+```bash
+uv run python scripts/generate_catalog.py --version 16.23.1
+```
+
+The generator downloads JSON only, writes ids, names and aliases, and preserves
+manual fields, retirement decisions, and missing Characters. Absence from a
+release does not automatically retire a Character: review that decision manually.
+When id and display name differ, both are aliases (MonkeyKing/Wukong).
+No images or art are downloaded or stored.
+
+### Current slice
+
+Create a Best-of-5 Hard Fearless Series, record each Game's Side and Draft
+Position, and enter a draft. Earlier picks lock for both Teams in the next Game.
+The timeline preserves entries; an attempted locked pick explains its rejection.
+Duplicate enforcement, locked-ban enforcement, results, assignments, overrides,
+and other formats are later tickets. Snapshot settings retain the profile defaults.
 
 ---
 
@@ -210,10 +250,10 @@ The story of the workflow, including which agent handled which task and how much
 
 ## Project status
 
-Design in progress; no code yet.
+Walking skeleton implemented; subsequent MVP slices are in progress.
 
 **MVP** (see [`docs/mvp-scope.md`](docs/mvp-scope.md))
-- [ ] 1. Walking skeleton: League of Legends profile, a series, one game's draft entered by hand, Fearless locks in game 2, through the real UI and API
+- [x] 1. Walking skeleton: League of Legends profile, a series, one game's draft entered by hand, Fearless locks in game 2, through the real UI and API
 - [ ] 2. Draft board and data: test-only second profile, corrections, overrides, timeline, CSV import, champion pools, opponent statistics
 - [ ] 3. Draft copilot: latency prototype first, then code shortlist plus language model, in English
 
