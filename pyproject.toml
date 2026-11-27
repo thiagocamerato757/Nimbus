@@ -1,0 +1,30 @@
+[project]
+name = "nimbus"
+version = "0.1.0"
+description = "Local Fearless Draft workspace"
+requires-python = ">=3.12"
+dependencies = ["fastapi>=0.115,<1", "uvicorn>=0.34,<1", "pyyaml>=6,<7"]
+
+[project.scripts]
+nimbus = "nimbus.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "httpx>=0.28,<1", "hypothesis>=6,<7", "mypy>=1.15,<2", "types-PyYAML>=6", "ruff>=0.11,<1"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.mypy]
+strict = true
+files = ["src", "scripts"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nimbus"]

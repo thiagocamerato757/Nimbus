@@ -1,0 +1,38 @@
+id: league-of-legends
+name: League of Legends
+format_version: 1
+team_size: 5
+character_label: Champion
+character_pool_label: Champion Pool
+catalog_file: league-of-legends.catalog.yaml
+sides: [blue, red]
+sides_coupled: false
+default_draft_order: lol-pro-2026
+draft_orders:
+  - id: lol-pro-2026
+    name: Professional draft
+    turns:
+      - {position: first, kind: ban}
+      - {position: second, kind: ban}
+      - {position: first, kind: ban}
+      - {position: second, kind: ban}
+      - {position: first, kind: ban}
+      - {position: second, kind: ban}
+      - {position: first, kind: pick}
+      - {position: second, kind: pick}
+      - {position: second, kind: pick}
+      - {position: first, kind: pick}
+      - {position: first, kind: pick}
+      - {position: second, kind: pick}
+      - {position: second, kind: ban}
+      - {position: first, kind: ban}
+      - {position: second, kind: ban}
+      - {position: first, kind: ban}
+      - {position: second, kind: pick}
+      - {position: first, kind: pick}
+      - {position: first, kind: pick}
+      - {position: second, kind: pick}
+rule_settings:
+  banning_locked: reject
+  same_character_twice: reject
+  voided_games_count: false

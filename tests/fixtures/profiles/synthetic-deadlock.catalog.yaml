@@ -1,0 +1,28 @@
+# Invented Characters; no production catalog or external data acquisition.
+# The walking-skeleton loader requires this source-version field for every catalog.
+data_dragon_version: synthetic-hand-authored-v1
+characters:
+  - {id: lantern, name: Lantern}
+  - {id: clockwork, name: Clockwork}
+  - {id: cobblestone, name: Cobblestone}
+  - {id: nightjar, name: Nightjar}
+  - {id: tramkeeper, name: Tramkeeper}
+  - {id: foghorn, name: Foghorn}
+  - {id: brasswing, name: Brasswing}
+  - {id: inkweaver, name: Inkweaver}
+  - {id: gaslight, name: Gaslight}
+  - {id: canalguard, name: Canalguard}
+  - {id: mothlight, name: Mothlight}
+  - {id: bellringer, name: Bellringer}
+  - {id: ironroot, name: Ironroot}
+  - {id: skylark, name: Skylark}
+  - {id: rainmaker, name: Rainmaker}
+  - {id: redshift, name: Redshift}
+  - {id: wardstone, name: Wardstone}
+  - {id: tideglass, name: Tideglass}
+  - {id: cinderwake, name: Cinderwake}
+  - {id: flintlock, name: Flintlock}
+  - {id: emberveil, name: Emberveil}
+  - {id: moonwire, name: Moonwire}
+  - {id: starling, name: Starling}
+  - {id: duskwarden, name: Duskwarden}
