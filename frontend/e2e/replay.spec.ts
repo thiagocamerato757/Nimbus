@@ -77,9 +77,12 @@ test('a stale Replay setup reloads, shows what changed and saves on the next try
   await setup.getByLabel('New draft', {exact: true}).check();
   await expect(setup.getByTestId('replay-preview')).toBeVisible();
   await post(base + '/first-selection', {first_selection_holder: 'B'});
+  // Wait until the live refresh already shows the other edit: the list of
+  // changes must still come from the setup's own baseline.
+  await expect(page.locator(`#game-${series.games[0].id} select[name="first_selection_holder"]`)).toHaveValue('B');
   await setup.getByRole('button', {name: 'Create Replay', exact: true}).click();
   await expect(setup.getByTestId('replay-changes')).toContainText('Game 1: First Selection holder');
-  await expect(page.getByText('This edit is outdated. The latest state is shown. Review it and try again.')).toBeVisible();
+  await expect(setup.getByTestId('replay-changes')).toContainText('The Series changed while this Replay setup was open.');
   await setup.getByRole('button', {name: 'Create Replay', exact: true}).click();
   await expect(page.getByTestId('timeline').locator('details')).toHaveCount(2);
   await expect(page.getByTestId('draft-progress')).toHaveText('0 / 20 turns');

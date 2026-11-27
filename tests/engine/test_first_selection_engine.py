@@ -75,3 +75,50 @@ def test_bs012_coupled_side_uses_explicit_mapping(profile):
     assert assignments[0].side == profile.sides[0] and assignments[0].position == "second"
     game = Game(id="coupled", number=1, assignments=assignments)
     assert derive_state(settings, profile.catalog, (game,), game).next_turn.team_id == "B"
+
+
+# Parent BS-012 / #14 (amended 2026-11-27): one engine rule records First
+# Selection for Start Game, Replay and timeline edits. A choice always belongs
+# to a holder; keeping the holder keeps the stored choice, changing it clears
+# the choice, and unsent fields are kept.
+def test_bs012_one_first_selection_rule_keeps_holder_and_choice_together(profile):
+    import pytest
+
+    from nimbus.engine import record_first_selection
+
+    sides = profile.snapshot().sides or ("one", "two")
+    game = Game(
+        id="g",
+        number=1,
+        assignments=(
+            Assignment(team_id="A", side=sides[0], position="first"),
+            Assignment(team_id="B", side=sides[1], position="second"),
+        ),
+    )
+
+    def record(stored, sent):
+        holder, choice = stored
+        start = game.model_copy(
+            update={"first_selection_holder": holder, "first_selection_choice": choice}
+        )
+        saved = record_first_selection(start, sent)
+        return saved.first_selection_holder, saved.first_selection_choice
+
+    assert record((None, None), {}) == (None, None)
+    assert record((None, None), {"first_selection_holder": "A"}) == ("A", None)
+    both = {"first_selection_holder": "A", "first_selection_choice": "side"}
+    assert record((None, None), both) == ("A", "side")
+    assert record(("A", "side"), {"first_selection_holder": "A"}) == ("A", "side")
+    assert record(("A", "side"), {"first_selection_holder": "B"}) == ("B", None)
+    assert record(("A", "side"), {"first_selection_holder": None}) == (None, None)
+    assert record(("A", "side"), {"first_selection_choice": "draft_position"}) == (
+        "A",
+        "draft_position",
+    )
+    for stored, sent in (
+        ((None, None), {"first_selection_choice": "side"}),
+        ((None, None), {"first_selection_holder": None, "first_selection_choice": "side"}),
+        (("A", "side"), {"first_selection_holder": None, "first_selection_choice": "side"}),
+    ):
+        with pytest.raises(ValueError, match="choice_without_holder"):
+            record(stored, sent)

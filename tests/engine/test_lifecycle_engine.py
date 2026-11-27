@@ -286,3 +286,17 @@ def test_missing_lists_everything_still_needed_to_reach_closed(profile, assignme
     )
     assert missing(complete) == ("winner", "player_assignments")
     assert missing(complete.model_copy(update={"player_assignments": assigned})) == ("winner",)
+
+
+# Parent ADR-0034 (amended 2026-11-27): the gate's last steps keep their order:
+# an unfinished current draft is reported before a full Series Format.
+def test_next_game_gate_reports_series_full_last(profile, assignments, character_ids):
+    from nimbus.engine import next_game_block
+
+    settings, games = decided_series(profile, assignments, character_ids)
+    one = games[0]
+    two = games[1].model_copy(update={"winner": "B"})
+    three = one.model_copy(update={"id": "three", "number": 3, "winner": None})
+    assert next_game_block(settings, (one, two, three)) == "series_full"
+    drafting = three.model_copy(update={"actions": three.actions[:1]})
+    assert next_game_block(settings, (one, two, drafting)) == "draft_incomplete"

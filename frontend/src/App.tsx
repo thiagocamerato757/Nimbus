@@ -49,7 +49,7 @@ export default function App() {
   const [overrideNote, setOverrideNote] = useState('');
   const [correction, setCorrection] = useState<{ game: string; turn: number; character: string } | null>(null);
   const [winnerPrompt, setWinnerPrompt] = useState(false);
-  const [replay, setReplay] = useState<{ source: string; choice: '' | 'copy_draft' | 'new_draft'; side: string; first: TeamId; patch: string; lineups: Record<TeamId, string[]>; version: string; holder?: TeamId | ''; selectionChoice?: string } | null>(null);
+  const [replay, setReplay] = useState<{ source: string; choice: '' | 'copy_draft' | 'new_draft'; side: string; first: TeamId; patch: string; lineups: Record<TeamId, string[]>; version: string; baseline: Series; holder?: TeamId | ''; selectionChoice?: string } | null>(null);
   const [replayPreview, setReplayPreview] = useState<Game | null>(null);
   const [replayChanges, setReplayChanges] = useState<string[]>([]);
   const [promptWinner, setPromptWinner] = useState<TeamId>('A');
@@ -128,23 +128,25 @@ export default function App() {
   }
 
   // A stale Replay setup reloads the current state, keeps the analyst's entries,
-  // takes the latest version and lists what changed, so the next try can succeed.
+  // takes the latest version and lists what changed since the setup's baseline,
+  // the Series as it was when the setup opened or last rebased. The live poll
+  // may already show the change, so the screen's Series is not the baseline.
   async function rebaseReplay() {
-    if (!series) return;
-    const before = series;
+    if (!replay) return;
+    const before = replay.baseline;
     const latest = await workspace.refresh();
     const after = latest?.data.find(item => item.id === before.id);
     if (!latest || !after) return;
-    setReplay(open => open && {...open, version: latest.version});
+    setReplay(open => open && {...open, version: latest.version, baseline: after});
     setReplayChanges(describeChanges(before, after));
   }
 
   function setupReplay() {
-    if (!current) return;
+    if (!current || !series) return;
     setReplayChanges([]);
     setReplay({source: current.id, choice: '', patch: current.patch ?? '', lineups: {...current.lineups},
       side: current.assignments.find(a => a.team_id === 'A')!.side,
-      first: current.assignments.find(a => a.position === 'first')!.team_id, version});
+      first: current.assignments.find(a => a.position === 'first')!.team_id, version, baseline: series});
   }
 
   async function save(path: string, body?: unknown, expectedVersion?: string, correctedAction?: { game: string; turn: number }, onStale?: () => Promise<void>) {
@@ -365,7 +367,7 @@ export default function App() {
             <label>{t('replayPatch')}<input maxLength={100} value={replay.patch} onChange={e => setReplay({...replay, patch: e.target.value})} /></label>
             <label>{t('replaySide')}<select value={replay.side} onChange={e => setReplay({...replay, side: e.target.value, first: series.rule_snapshot.sides_coupled ? (e.target.value === series.rule_snapshot.first_pick_side ? 'A' : 'B') : replay.first})}>{seriesSides.map(side => <option key={side} value={side}>{side}</option>)}</select></label>
             <label>{t('replayFirst')}<select value={replay.first} disabled={series.rule_snapshot.sides_coupled} onChange={e => setReplay({...replay, first: e.target.value as TeamId})}>{series.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
-            <FirstSelectionFields teams={series.teams} holder={replayHolder} choice={replay.selectionChoice ?? ''} onHolder={holder => setReplay({...replay, holder, selectionChoice: ''})} onChoice={selectionChoice => setReplay({...replay, selectionChoice})} />
+            <FirstSelectionFields teams={series.teams} holder={replayHolder} choice={replay.selectionChoice ?? ''} onHolder={holder => setReplay(open => open && {...open, holder})} onChoice={selectionChoice => setReplay(open => open && {...open, selectionChoice})} />
             {series.teams.map(team => <label key={team.id}>{t('replayLineup', {team: team.name})}<select multiple value={replay.lineups[team.id]} onChange={e => setReplay({...replay, lineups: {...replay.lineups, [team.id]: [...e.target.selectedOptions].map(option => option.value)}})}>
               {players.filter(player => player.current_team_id === team.roster_id || current.lineups[team.id].includes(player.id)).map(player => <option key={player.id} value={player.id}>{player.name}</option>)}
             </select></label>)}
@@ -453,7 +455,7 @@ export default function App() {
               {seriesSides.map(value => <option key={value} value={value}>{value === 'blue' || value === 'red' ? t(value) : value}</option>)}</select></label>
             <label>{t('firstPick')}<select aria-label={t('firstPick')} value={setupFirst} disabled={series.rule_snapshot.sides_coupled} onChange={e => setFirstPick(e.target.value as TeamId)}>
               {series.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
-            <FirstSelectionFields teams={series.teams} holder={shownHolder} choice={selectionChoice} onHolder={holder => { setSelectionHolder(holder); setSelectionChoice(''); }} onChoice={setSelectionChoice} />
+            <FirstSelectionFields teams={series.teams} holder={shownHolder} choice={selectionChoice} onHolder={setSelectionHolder} onChoice={setSelectionChoice} />
             {setupNotice && <p role="status" data-testid="prefill-notice">{setupNotice}</p>}
             <p className="muted">{t('selectionHint')}</p>
             <label>{t('gamePatch')}<input value={gamePatch} placeholder={series.patch ?? ''} onChange={e => setGamePatch(e.target.value)} maxLength={100} /></label>

@@ -334,3 +334,33 @@ def test_bs012_first_selection_edit_keeps_holder_and_choice_consistent(tmp_path)
             "B",
             "side",
         )
+
+
+# Parent BS-012 / #14 (amended 2026-11-27): a choice always belongs to a
+# holder. Start Game, Replay and the timeline edit all reject a choice without a
+# holder, with the same code, and change nothing.
+def test_bs012_a_choice_without_a_holder_is_rejected_everywhere(tmp_path):
+    with CurrentClient(create_app(data_dir=tmp_path)) as client:
+        base = "/api/series/" + series(client)["id"]
+        setup = {"team_a_side": "blue", "first_pick_team": "A"}
+        orphan = {"first_selection_choice": "side"}
+        before = client.get(base)
+        response = client.post(base + "/games", json={**setup, **orphan})
+        assert response.status_code == 422, response.text
+        assert response.json()["detail"]["code"] == "choice_without_holder"
+        assert client.get(base).json() == before.json()
+        game = post(client, base + "/games", setup)["games"][0]
+        path = base + "/games/" + game["id"]
+        before = client.get(base)
+        for body in (orphan, {"first_selection_holder": None, **orphan}):
+            response = client.post(path + "/first-selection", json=body)
+            assert response.status_code == 422, response.text
+            assert response.json()["detail"]["code"] == "choice_without_holder"
+        assert client.get(base).json() == before.json()
+        post(client, path + "/void", {})
+        before = client.get(base)
+        for endpoint in ("/replay-preview", "/replay"):
+            response = client.post(path + endpoint, json={"draft_choice": "new_draft", **orphan})
+            assert response.status_code == 422, response.text
+            assert response.json()["detail"]["code"] == "choice_without_holder"
+        assert client.get(base).json() == before.json()

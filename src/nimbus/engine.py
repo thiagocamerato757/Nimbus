@@ -5,7 +5,8 @@ No database, profile loader or Title identifiers belong at this seam.
 
 import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from typing import NamedTuple
 
 from nimbus.models import (
     Acknowledgement,
@@ -87,8 +88,15 @@ def is_drafted_or_closed(settings: RuleSnapshot, game: Game) -> bool:
     return not game.voided and draft_complete(settings, game)
 
 
-def derive_progress(settings: RuleSnapshot, games: Sequence[Game]) -> SeriesProgress:
-    """Recompute score and completion without changing or discarding Games."""
+class _Outcome(NamedTuple):
+    score: dict[TeamId, int]
+    pending: tuple[int, ...]
+    ended: bool
+    deciding: int | None
+    past: tuple[int, ...]
+
+
+def _outcome(settings: RuleSnapshot, games: Sequence[Game]) -> _Outcome:
     counted = [g for g in games if not g.voided]
     # Only a Drafted or Closed Game has a result; a winner left on a Game that
     # returned to Drafting is ignored until its draft is complete again.
@@ -104,28 +112,31 @@ def derive_progress(settings: RuleSnapshot, games: Sequence[Game]) -> SeriesProg
     if settings.series_format.kind == "best_of":
         ended = deciding is not None and not pending
         past = tuple(g.number for g in counted if deciding is not None and g.number > deciding)
-    else:
-        deciding = None
-        past = ()
-        ended = len(with_result) >= settings.series_format.games
+        return _Outcome(score, pending, ended, deciding, past)
+    return _Outcome(score, pending, len(with_result) >= settings.series_format.games, None, ())
+
+
+def derive_progress(settings: RuleSnapshot, games: Sequence[Game]) -> SeriesProgress:
+    """Recompute score and completion without changing or discarding Games."""
+    outcome = _outcome(settings, games)
     return SeriesProgress(
-        score=score,
-        pending_results=pending,
-        ended=ended,
-        deciding_game=deciding,
-        games_past_decision=past,
-        can_start_next=_next_game_block(settings, games, ended) is None,
+        score=outcome.score,
+        pending_results=outcome.pending,
+        ended=outcome.ended,
+        deciding_game=outcome.deciding,
+        games_past_decision=outcome.past,
+        can_start_next=_next_game_block(settings, games, outcome.ended) is None,
     )
 
 
 def next_game_block(settings: RuleSnapshot, games: Sequence[Game]) -> str | None:
     """Why the next ordinary Game cannot start, or None when it can.
 
-    This one ordered gate gives ``can_start_next`` and the start route their
-    answer (ADR-0010, ADR-0034, amended 2026-11-27). An ended Series comes
-    first, so it never asks for a Replay that the same gate would refuse.
+    This one ordered gate gives ``can_start_next``, the start route and the
+    Replay gate their answer (ADR-0010, ADR-0034, amended 2026-11-27). An ended
+    Series comes first, so it is never told to replay.
     """
-    return _next_game_block(settings, games, derive_progress(settings, games).ended)
+    return _next_game_block(settings, games, _outcome(settings, games).ended)
 
 
 def _next_game_block(settings: RuleSnapshot, games: Sequence[Game], ended: bool) -> str | None:
@@ -144,15 +155,36 @@ def _next_game_block(settings: RuleSnapshot, games: Sequence[Game], ended: bool)
 def replay_block(settings: RuleSnapshot, games: Sequence[Game], source: Game) -> str | None:
     """Why ``source`` cannot be replayed now, or None when it can.
 
-    A Replay is how the next Game starts after a void, so it follows the same
-    ended gate; only the current Game, when Voided, can be replayed.
+    A Replay is how the next Game starts after a void, so it passes the same
+    gate: the gate must answer "replay required", and ``source`` must be that
+    Voided current Game.
     """
-    if derive_progress(settings, games).ended:
-        return "series_ended"
+    block = next_game_block(settings, games)
+    if block == "series_ended":
+        return block
     current = current_game(games)
-    if current is None or current.id != source.id or not source.voided:
+    if block != "replay_required" or current is None or current.id != source.id:
         return "replay_unavailable"
     return None
+
+
+def record_first_selection(game: Game, sent: Mapping[str, str | None]) -> Game:
+    """The one First Selection rule for Start Game, Replay and edits (#14).
+
+    ``sent`` holds only the fields the analyst sent. Unsent fields are kept,
+    except a stored choice when the holder changes, because it belonged to the
+    other Team. A choice always belongs to a holder (amended 2026-11-27).
+    """
+    holder = sent.get("first_selection_holder", game.first_selection_holder)
+    same_holder = holder == game.first_selection_holder
+    choice = sent.get(
+        "first_selection_choice", game.first_selection_choice if same_holder else None
+    )
+    if choice is not None and holder is None:
+        raise ValueError("choice_without_holder")
+    return game.model_copy(
+        update={"first_selection_holder": holder, "first_selection_choice": choice}
+    )
 
 
 def _base_state(

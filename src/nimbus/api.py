@@ -20,6 +20,7 @@ from nimbus.engine import (
     is_drafted_or_closed,
     next_game_block,
     record_entry,
+    record_first_selection,
     replay_block,
     void_game,
 )
@@ -127,7 +128,7 @@ GATE_MESSAGES = {
     "replay_required": "After a Voided Game, replay it: copy its draft or choose new draft.",
     "draft_incomplete": "Complete the current draft before starting the next Game.",
     "series_full": "All Games in this Series Format have been started.",
-    "replay_unavailable": "Only the current Voided Game can be replayed.",
+    "replay_unavailable": "Only the current Game can be replayed, when it is a Voided Game.",
     "copy_requires_same_draft_positions": (
         "Copying the draft requires the same Draft Positions; keep them or choose new draft."
     ),
@@ -136,6 +137,16 @@ GATE_MESSAGES = {
 
 def reject(code: str, message: str, status: int = 409) -> HTTPException:
     return HTTPException(status_code=status, detail={"code": code, "message": message})
+
+
+def with_first_selection(game: Game, request: FirstSelection) -> Game:
+    """Apply the engine's First Selection rule to the fields the request sent."""
+    try:
+        return record_first_selection(game, request.model_dump(include=request.model_fields_set))
+    except ValueError as error:
+        raise reject(
+            str(error), "Record the First Selection holder before its choice.", 422
+        ) from None
 
 
 def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) -> FastAPI:
@@ -358,10 +369,9 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
             number=max((g.number for g in series.games), default=0) + 1,
             lineups=series.games[-1].lineups if series.games else {"A": (), "B": ()},
             assignments=assignments,
-            first_selection_holder=request.first_selection_holder,
-            first_selection_choice=request.first_selection_choice,
             patch=request.patch if request.patch is not None else series.patch,
         )
+        game = with_first_selection(game, request)
         store.add_game(identifier, game)
         return view(read(identifier))
 
@@ -435,13 +445,7 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
                     code, "Replay must preserve Structural Invariants and the Draft Order."
                 ),
             ) from None
-        replay = replay.model_copy(
-            update={
-                name: getattr(request, name)
-                for name in ("first_selection_holder", "first_selection_choice")
-                if name in request.model_fields_set
-            }
-        )
+        replay = with_first_selection(replay, request)
         return series, replay
 
     @app.post("/api/series/{identifier}/games/{game_id}/replay-preview")
@@ -469,18 +473,7 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
     @app.post("/api/series/{identifier}/games/{game_id}/first-selection")
     def edit_first_selection(identifier: str, game_id: str, request: FirstSelection) -> SeriesView:
         game = find_game(read(identifier), game_id)
-        # Holder and choice go together (#14, amended 2026-11-27): unsent fields
-        # are kept, except a stored choice when the holder changes, because it
-        # belonged to the other Team.
-        sent = request.model_dump(include=request.model_fields_set)
-        holder = sent.get("first_selection_holder", game.first_selection_holder)
-        kept = game.first_selection_choice if holder == game.first_selection_holder else None
-        choice = sent.get("first_selection_choice", kept)
-        store.save_first_selection(
-            game.model_copy(
-                update={"first_selection_holder": holder, "first_selection_choice": choice}
-            )
-        )
+        store.save_first_selection(with_first_selection(game, request))
         return view(read(identifier))
 
     @app.post("/api/series/{identifier}/games/{game_id}/winner")
