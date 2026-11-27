@@ -13,6 +13,7 @@ export interface Profile { team_size: number; character_pool_label: string; id: 
 export interface Turn { position: 'first' | 'second'; kind: Kind }
 export interface DraftAction { turn_index: number; team_id: TeamId; kind: Kind; character_id: string | null }
 export interface Game {
+  winner: TeamId | null; voided: boolean;
   id: string; number: number; patch: string | null;
   assignments: { team_id: TeamId; side: string; position: 'first' | 'second' }[];
   lineups: Record<TeamId, string[]>;
@@ -20,12 +21,14 @@ export interface Game {
   actions: DraftAction[];
   edit_history: { recorded_at: string; before: DraftAction; after: DraftAction | null }[];
   state: { locks: Record<TeamId, string[]>; available: Record<TeamId, string[]>;
+    status: 'Drafting' | 'Drafted' | 'Closed' | 'Voided'; result_pending: boolean; missing: string[];
     notices: { turn_index: number; rule: string }[];
     violations: { turn_index: number; rule: string; status: 'open' | 'acknowledged'; reason: { category: 'official_ruling' | 'profile_mismatch' | 'earlier_entry_wrong' | 'other'; note: string | null } | null }[];
     profile_update_hints: string[];
     complete: boolean; next_turn: { index: number; team_id: TeamId; kind: Kind } | null };
 }
 export interface Series {
+  progress: { score: Record<TeamId, number>; pending_results: number[]; ended: boolean; can_start_next: boolean; deciding_game: number | null; games_past_decision: number[] };
   id: string; profile_id: string; teams: { id: TeamId; name: string; roster_id: string }[]; our_team: TeamId | null;
   patch: string | null; record_type: 'official' | 'scrim';
   rule_snapshot: { series_format: SeriesFormat; fearless: Fearless; draft_order: { id: string; name: string; turns: Turn[] } };

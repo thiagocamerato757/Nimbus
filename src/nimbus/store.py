@@ -60,7 +60,7 @@ class Store:
         with self.connection() as connection:
             connection.execute("PRAGMA journal_mode=WAL")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version in (1, 2, 3, 4, 5):
+            if version in (1, 2, 3, 4, 5, 6):
                 self.create_backup("migration")
             if version == 0:
                 migration = Path(__file__).with_name("migrations") / "001_initial.sql"
@@ -113,7 +113,15 @@ class Store:
                     connection.execute(
                         "UPDATE series SET teams = ? WHERE id = ?", (json.dumps(teams), row["id"])
                     )
-            elif version != 6:
+                version = 6
+            if version == 6:
+                migration = Path(__file__).with_name("migrations") / "007_game_lifecycle.sql"
+                columns = {row[1] for row in connection.execute("PRAGMA table_info(games)")}
+                if "winner" not in columns:
+                    connection.executescript("BEGIN;\n" + migration.read_text() + "\nCOMMIT;")
+                else:
+                    connection.execute("PRAGMA user_version = 7")
+            elif version != 7:
                 raise RuntimeError(f"Unsupported Nimbus database schema: {version}")
 
     @contextmanager
@@ -213,6 +221,8 @@ class Store:
                             for team in team_ids
                         },
                         patch=game["patch"],
+                        winner=game["winner"],
+                        voided=bool(game["voided"]),
                         id=game["id"],
                         number=game["number"],
                         assignments=json.loads(game["assignments"]),
@@ -262,6 +272,14 @@ class Store:
 
             for team_id, players in game.lineups.items():
                 self.save_lineup(game.id, team_id, players)
+
+    def save_winner(self, game_id: str, winner: str | None) -> None:
+        with self.connection() as connection:
+            connection.execute("UPDATE games SET winner = ? WHERE id = ?", (winner, game_id))
+
+    def void_game(self, game_id: str) -> None:
+        with self.connection() as connection:
+            connection.execute("UPDATE games SET voided = 1 WHERE id = ?", (game_id,))
 
     def save_lineup(self, game_id: str, team_id: str, players: tuple[str, ...]) -> None:
         with self.connection() as connection:

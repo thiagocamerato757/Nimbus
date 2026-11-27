@@ -11,6 +11,7 @@ from nimbus.engine import (
     acknowledge_violation,
     clear_action,
     correct_action,
+    derive_progress,
     derive_state,
     record_entry,
 )
@@ -77,6 +78,10 @@ class StartGame(Request):
     patch: str | None = Field(default=None, max_length=100)
     team_a_side: str
     first_pick_team: TeamId
+
+
+class EditWinner(Request):
+    winner: TeamId | None
 
 
 class AcknowledgeViolation(Request):
@@ -151,7 +156,11 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
             )
             for game in series.games
         )
-        return SeriesView(**series.model_dump(exclude={"games"}), games=games)
+        return SeriesView(
+            **series.model_dump(exclude={"games"}),
+            games=games,
+            progress=derive_progress(series.rule_snapshot, series.games),
+        )
 
     def check_team(team_id: str | None) -> None:
         if team_id is not None and not any(t.id == team_id for t in store.list_teams()):
@@ -287,6 +296,7 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
         profile = profiles()[series.profile_id]
         if (
             series.games
+            and not series.games[-1].voided
             and not derive_state(
                 series.rule_snapshot, profile.catalog, series.games, series.games[-1]
             ).complete
@@ -294,8 +304,10 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
             raise reject(
                 "draft_incomplete", "Complete the current draft before starting the next Game."
             )
-        if len(series.games) >= series.rule_snapshot.series_format.games:
+        if sum(not g.voided for g in series.games) >= series.rule_snapshot.series_format.games:
             raise reject("series_full", "All Games in this Series Format have been started.")
+        if derive_progress(series.rule_snapshot, series.games).ended:
+            raise reject("series_ended", "The Series has reached its deciding Game.")
         if request.team_a_side not in profile.sides:
             raise reject("unknown_side", "Choose a Side from the Title profile.", 422)
         other_side = next(side for side in profile.sides if side != request.team_a_side)
@@ -322,6 +334,18 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
         if game is None:
             raise reject("game_not_found", "Game not found.", 404)
         return game
+
+    @app.post("/api/series/{identifier}/games/{game_id}/winner")
+    def edit_winner(identifier: str, game_id: str, request: EditWinner) -> SeriesView:
+        game = find_game(read(identifier), game_id)
+        store.save_winner(game.id, request.winner)
+        return view(read(identifier))
+
+    @app.post("/api/series/{identifier}/games/{game_id}/void")
+    def void_game(identifier: str, game_id: str) -> SeriesView:
+        game = find_game(read(identifier), game_id)
+        store.void_game(game.id)
+        return view(read(identifier))
 
     @app.post("/api/series/{identifier}/games/{game_id}/lineups")
     def edit_lineup(identifier: str, game_id: str, request: EditLineup) -> SeriesView:

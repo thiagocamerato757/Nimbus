@@ -1,5 +1,12 @@
 // All interface copy is keyed here; profile and user-entered names are data.
 const en = {
+  Drafting: 'Drafting', Drafted: 'Drafted', Closed: 'Closed', Voided: 'Voided',
+  winner: 'Winner', saveWinner: 'Save winner', later: 'Later', resultPending: 'Result pending',
+  winnerPrompt: 'Record the previous Game’s winner', recordAndStart: 'Record winner and start',
+  voidGame: 'Void Game', winnerMissing: 'Winner missing', assignmentsMissing: 'Player Assignments missing',
+  draftMissing: 'Draft incomplete', recordComplete: 'Record complete', timelineLocks: 'Locked Characters',
+  seriesEnded: 'Series ended', series_ended: 'The Series has reached its deciding Game.',
+  pastDecision: 'Games exist past the deciding Game ({number}). All records have been kept.',
   rosters: 'Rosters and Declared Pools', roster: 'Roster', newPlayer: 'New Player name', playerName: 'Player name',
   usualRole: 'Usual Role', createPlayer: 'Create Player', savePlayer: 'Save Player', removePlayer: 'Remove from Roster',
   declaredPool: 'Declared Pool', savePool: 'Save Declared Pool', existingPlayer: 'Existing Player', addPlayer: 'Add to Roster',

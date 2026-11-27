@@ -153,6 +153,8 @@ def empty_lineups() -> dict[TeamId, tuple[str, ...]]:
 
 
 class Game(Value):
+    winner: TeamId | None = None
+    voided: bool = False
     player_assignments: tuple[PlayerAssignment, ...] = ()
     lineups: dict[TeamId, tuple[str, ...]] = Field(default_factory=empty_lineups)
     patch: str | None = None
@@ -182,6 +184,9 @@ class NextTurn(Value):
 
 
 class DraftState(Value):
+    status: Literal["Drafting", "Drafted", "Closed", "Voided"] = "Drafting"
+    result_pending: bool = False
+    missing: tuple[str, ...] = ()
     locks: dict[TeamId, tuple[str, ...]]
     available: dict[TeamId, tuple[str, ...]]
     next_turn: NextTurn | None
@@ -195,5 +200,15 @@ class GameView(Game):
     state: DraftState
 
 
+class SeriesProgress(Value):
+    score: dict[TeamId, int]
+    pending_results: tuple[int, ...]
+    ended: bool
+    can_start_next: bool
+    deciding_game: int | None = None
+    games_past_decision: tuple[int, ...] = ()
+
+
 class SeriesView(Series):
+    progress: SeriesProgress
     games: tuple[GameView, ...] = ()

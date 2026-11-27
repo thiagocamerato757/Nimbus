@@ -43,6 +43,8 @@ export default function App() {
   const [overrideCategory, setOverrideCategory] = useState('official_ruling');
   const [overrideNote, setOverrideNote] = useState('');
   const [correction, setCorrection] = useState<{ game: string; turn: number; character: string } | null>(null);
+  const [winnerPrompt, setWinnerPrompt] = useState(false);
+  const [promptWinner, setPromptWinner] = useState<TeamId>('A');
   const profile = profiles.find(p => p.id === (series?.profile_id ?? profileId));
   const current = series?.games.at(-1);
   const nextTurn = current?.state.next_turn;
@@ -68,15 +70,16 @@ export default function App() {
   }
   useEffect(() => { void load(); }, []);
 
-  async function save(path: string, body?: unknown) {
+  async function save(path: string, body?: unknown, expectedVersion?: string) {
     setBusy(true); setError(''); setRejectedRule('');
     try {
-      const result = await requestSnapshot<Series>(path, body, editVersion ?? version);
+      const result = await requestSnapshot<Series>(path, body, expectedVersion ?? editVersion ?? version);
       const updated = result.data;
       setCharacter(''); setSearch(''); setOverrideNote('');
       workspace.accept({ data: [updated, ...seriesList.filter(item => item.id !== updated.id)], version: result.version });
       setSelectedId(updated.id); setEditVersion(null); setCorrection(null);
       await Promise.all([workspace.refresh(), people.refresh(), teams.refresh()]);
+      return result;
     } catch (e) {
       setError(errorText(e instanceof ApiError ? e.code : 'unexpected'));
       if (e instanceof ApiError && ['fearless_lock', 'wasted_ban', 'duplicate_character'].includes(e.code)) setRejectedRule(e.code);
@@ -123,7 +126,20 @@ export default function App() {
   }
   function start(event: FormEvent) {
     event.preventDefault();
-    if (series) void save(`/series/${series.id}/games`, { team_a_side: side, first_pick_team: firstPick, patch: gamePatch || series.patch });
+    if (current && !current.voided && current.winner === null) setWinnerPrompt(true);
+    else void launchGame();
+  }
+  async function launchGame(winner?: TeamId) {
+    if (!series) return;
+    let expectedVersion = editVersion ?? version;
+    if (winner && current) {
+      const result = await save(`/series/${series.id}/games/${current.id}/winner`, { winner });
+      if (!result) return;
+      expectedVersion = result.version;
+      if (!result.data.progress.can_start_next) { setWinnerPrompt(false); return; }
+    }
+    const result = await save(`/series/${series.id}/games`, { team_a_side: side, first_pick_team: firstPick, patch: gamePatch || series.patch }, expectedVersion);
+    if (result) setWinnerPrompt(false);
   }
   function record(event: FormEvent) {
     event.preventDefault();
@@ -164,11 +180,11 @@ export default function App() {
     <aside className="sidebar">
       <a className="brand" href="/" aria-label={t('brand')}><span className="brand-mark" aria-hidden="true">N</span>{t('brand')}</a>
       <p className="sidebar-caption">{t('workspace')}</p>
-      <button className="new-series" onClick={() => { setSelectedId(null); setError(''); setEditVersion(null); setCharacter(''); setRejectedRule(''); }} disabled={busy}>{t('newSeries')}</button>
+      <button className="new-series" onClick={() => { setSelectedId(null); setWinnerPrompt(false); setError(''); setEditVersion(null); setCharacter(''); setRejectedRule(''); }} disabled={busy}>{t('newSeries')}</button>
       <h2 className="eyebrow">{t('yourSeries')}</h2>
       <nav className="series-nav">
         {seriesList.map(item => <button key={item.id} className={series?.id === item.id ? 'selected' : ''}
-          disabled={busy} onClick={() => { setSelectedId(item.id); setEditVersion(null); setCharacter(''); setError(''); }}>
+          disabled={busy} onClick={() => { setSelectedId(item.id); setWinnerPrompt(false); setEditVersion(null); setCharacter(''); setError(''); }}>
           {t('vs', { a: item.teams[0].name, b: item.teams[1].name })}
         </button>)}
         {!seriesList.length && <p className="muted">{t('noSeries')}</p>}
@@ -225,13 +241,22 @@ export default function App() {
           <button className="primary" disabled={busy || !profile || invalidCombination}>{busy ? t('saving') : t('create')}</button>
         </form>
       </section> : <>
+        <p data-testid="series-score">{series.teams.map(team => `${team.name} ${series.progress.score[team.id]}`).join(' · ')}{series.progress.ended && <> · {t('seriesEnded')}</>}</p>
+        {!!series.progress.games_past_decision.length && <p role="alert">{t('pastDecision', { number: series.progress.deciding_game! })}</p>}
+        {winnerPrompt && <section role="dialog" aria-modal="true" aria-label={t('winnerPrompt')} className="panel">
+          <h2>{t('winnerPrompt')}</h2>
+          <label>{t('winner')}<select value={promptWinner} onChange={e => setPromptWinner(e.target.value as TeamId)}>{series.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+          <button disabled={busy} onClick={() => void launchGame(promptWinner)}>{t('recordAndStart')}</button>
+          <button disabled={busy} onClick={() => void launchGame()}>{t('later')}</button>
+          <button disabled={busy} onClick={() => setWinnerPrompt(false)}>{t('cancelCorrection')}</button>
+        </section>}
         {profile && <Rosters series={series} profile={profile} players={players} busy={busy || Number(people.snapshot?.version ?? -1) < Number(version)}
           onEdit={() => setEditVersion(previous => previous ?? people.snapshot?.version ?? version)} onSave={savePlayer} />}
         {current && profile && <GamePlayers game={current} series={series} profile={profile} players={players} busy={busy}
-          current onEdit={() => setEditVersion(previous => previous ?? version)} onSave={save} />}
+          current onEdit={() => setEditVersion(previous => previous ?? version)} onSave={async (path, body) => { await save(path, body); }} />}
         <div className="game-strip" aria-label={t('timeline')}>
           {series.games.map(game => <div className={game.id === current?.id ? 'game-step active' : 'game-step'} key={game.id}>
-            <span>{t('game', { number: game.number })}</span><small>{game.state.complete ? t('drafted') : t('drafting')}</small>
+            <span>{t('game', { number: game.number })}</span><small>{t(game.state.status)}{game.state.result_pending && <> · {t('resultPending')}</>}</small>
           </div>)}
         </div>
         {current && <>
@@ -260,9 +285,9 @@ export default function App() {
                 <label>{t('overrideNote')}<input value={overrideNote} maxLength={2000} required={overrideCategory === 'other'} onChange={e => setOverrideNote(e.target.value)} /></label>
                 <button disabled={busy || (overrideCategory === 'other' && !overrideNote.trim())}>{t('recordOverride')}</button>
               </form>}
-              </> : <><h2>{t('complete')}</h2><p className="muted">{t('draftCompleteHint')}</p></>}
+              </> : <><h2>{current.voided ? t('Voided') : t('complete')}</h2>{series.progress.can_start_next && <p className="muted">{t('draftCompleteHint')}</p>}</>}
           </section>
-          {!!current.actions.length && <button disabled={busy} onClick={() => void save(`/series/${series.id}/games/${current.id}/actions/${current.actions.at(-1)!.turn_index}/clear`, {})}>{t('clearLatest')}</button>}
+          {!!current.actions.length && !current.voided && <button disabled={busy} onClick={() => void save(`/series/${series.id}/games/${current.id}/actions/${current.actions.at(-1)!.turn_index}/clear`, {})}>{t('clearLatest')}</button>}
           <div data-testid="rule-notices" role="status">
             {current.state.notices.map(notice => <p key={`notice-${notice.turn_index}`}>{errorText(notice.rule)}</p>)}
             {violationList(current)}
@@ -283,7 +308,7 @@ export default function App() {
           })}</div>
           <p className="lock-footnote">{t('lockHint')}</p>
         </>}
-        {(!current || current.state.complete) && series.games.length < series.rule_snapshot.series_format.games ? <section className="next-game panel">
+        {series.progress.can_start_next ? <section className="next-game panel">
           <div><h2>{t('gameSetup')}</h2><p className="muted">{t('gameSetupHint')}</p></div>
           <form onChangeCapture={() => setEditVersion(previous => previous ?? version)} onSubmit={start} className="next-game-form">
             <label>{t('sideFor', { team: teamName('A') })}<select value={side} onChange={e => setSide(e.target.value)}>
@@ -293,14 +318,23 @@ export default function App() {
             <label>{t('gamePatch')}<input value={gamePatch} placeholder={series.patch ?? ''} onChange={e => setGamePatch(e.target.value)} maxLength={100} /></label>
             <button className="primary" disabled={busy}>{t('startGame', { number: series.games.length + 1 })}</button>
           </form>
-        </section> : <p className="muted">{series.games.length >= series.rule_snapshot.series_format.games ? t('allStarted') : t('remaining')}</p>}
+        </section> : <p className="muted">{series.progress.ended ? t('seriesEnded') : series.games.filter(g => !g.voided).length >= series.rule_snapshot.series_format.games ? t('allStarted') : t('remaining')}</p>}
         {!!series.games.length && <section className="timeline" data-testid="timeline"><div className="section-title"><h2>{t('timeline')}</h2><p>{t('timelineHint')}</p></div>
           {series.games.map(game => <details className="timeline-game panel" key={game.id} open={game.id !== current?.id}>
-            <summary><strong>{t('game', { number: game.number })}</strong><span>{game.state.complete ? t('drafted') : t('drafting')}</span></summary>
+            <summary><strong>{t('game', { number: game.number })}</strong><span>{t(game.state.status)}{game.state.result_pending && <> · {t('resultPending')}</>}</span></summary>
+            <form key={game.winner ?? 'pending'} onChangeCapture={() => setEditVersion(previous => previous ?? version)} onSubmit={event => {
+              event.preventDefault(); const fields = new FormData(event.currentTarget);
+              void save(`/series/${series.id}/games/${game.id}/winner`, { winner: fields.get('winner') || null });
+            }}>
+              <label>{t('winner')}<select aria-label={t('winner')} name="winner" defaultValue={game.winner ?? ''}><option value="">{t('resultPending')}</option>{series.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+              <button disabled={busy}>{t('saveWinner')}</button>
+            </form>
+            {!game.voided && <button disabled={busy} onClick={() => void save(`/series/${series.id}/games/${game.id}/void`, {})}>{t('voidGame')}</button>}
             {game.id !== current?.id && profile && <GamePlayers game={game} series={series} profile={profile} players={players} busy={busy}
-              onEdit={() => setEditVersion(previous => previous ?? version)} onSave={save} />}
+              onEdit={() => setEditVersion(previous => previous ?? version)} onSave={async (path, body) => { await save(path, body); }} />}
             <div className="timeline-teams">{series.teams.map(team => <div key={team.id}><h3>{team.name}</h3>
-              <h4>{t('picks')}</h4>{actionList(game, team.id, 'pick')}<h4>{t('bans')}</h4>{actionList(game, team.id, 'ban')}</div>)}</div>
+              <h4>{t('picks')}</h4>{actionList(game, team.id, 'pick')}<h4>{t('bans')}</h4>{actionList(game, team.id, 'ban')}
+              <h4>{t('timelineLocks')}</h4><p>{game.state.locks[team.id].map(characterName).join(', ') || t('noLocks')}</p></div>)}</div>
             {game.id !== current?.id && violationList(game)}
             <ol className="correction-actions">{game.actions.map(action => <li key={action.turn_index}>
               <span>{action.turn_index + 1} · {teamName(action.team_id)} · {t(action.kind)} · {action.character_id === null ? t('skippedBan') : characterName(action.character_id)}</span>
@@ -320,7 +354,7 @@ export default function App() {
             {!!game.edit_history.length && <section data-testid="edit-history"><h3>{t('editHistory')}</h3><ol>{game.edit_history.map((edit, index) => <li key={index}>
               <time dateTime={edit.recorded_at}>{new Date(edit.recorded_at).toLocaleString()}</time> · {edit.before.turn_index + 1} · {edit.before.character_id === null ? t('skippedBan') : characterName(edit.before.character_id)} → {edit.after === null ? t('cleared') : edit.after.character_id === null ? t('skippedBan') : characterName(edit.after.character_id)}
             </li>)}</ol></section>}
-            {game.state.complete && <p className="muted">{t('missing')}</p>}
+            {!game.voided && <p className="muted">{game.state.missing.map(field => field === 'winner' ? t('winnerMissing') : field === 'draft' ? t('draftMissing') : t('assignmentsMissing')).join(' · ') || t('recordComplete')}</p>}
           </details>)}
         </section>}
       </>}

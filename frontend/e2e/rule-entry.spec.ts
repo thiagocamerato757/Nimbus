@@ -48,6 +48,7 @@ test('a warn rule shows a notice after accepting a locked ban', async ({ page })
     await expect(page.getByTestId('draft-progress')).toHaveText(`${i + 1} / 20 turns`);
   }
   await page.getByRole('button', { name: 'Start Game 2' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Later', exact: true }).click();
   await page.getByLabel('Character to record').selectOption('Orianna');
   await page.getByRole('button', { name: 'Record entry' }).click();
   await expect(page.getByTestId('draft-progress')).toHaveText('1 / 20 turns');

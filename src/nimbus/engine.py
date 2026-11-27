@@ -17,9 +17,48 @@ from nimbus.models import (
     Notice,
     OverrideReason,
     RuleSnapshot,
+    SeriesProgress,
     TeamId,
     Violation,
 )
+
+
+def derive_progress(settings: RuleSnapshot, games: Sequence[Game]) -> SeriesProgress:
+    """Recompute score and completion without changing or discarding Games."""
+    counted = [g for g in games if not g.voided]
+    score: dict[TeamId, int] = {"A": 0, "B": 0}
+    pending = tuple(
+        g.number
+        for g in counted
+        if len(g.actions) == len(settings.draft_order.turns) and g.winner is None
+    )
+    deciding = None
+    for game in counted:
+        if game.winner is not None:
+            score[game.winner] += 1
+            if deciding is None and score[game.winner] >= settings.series_format.games // 2 + 1:
+                deciding = game.number
+    if settings.series_format.kind == "best_of":
+        ended = deciding is not None and not pending
+        past = tuple(g.number for g in counted if deciding is not None and g.number > deciding)
+    else:
+        deciding = None
+        past = ()
+        ended = (
+            sum(len(g.actions) == len(settings.draft_order.turns) for g in counted)
+            >= settings.series_format.games
+        )
+    ready = (
+        not games or games[-1].voided or len(games[-1].actions) == len(settings.draft_order.turns)
+    )
+    return SeriesProgress(
+        score=score,
+        pending_results=pending,
+        ended=ended,
+        deciding_game=deciding,
+        games_past_decision=past,
+        can_start_next=ready and not ended and len(counted) < settings.series_format.games,
+    )
 
 
 def _base_state(
@@ -29,7 +68,9 @@ def _base_state(
     locked: dict[TeamId, set[str]] = {team: set() for team in teams}
     variant = settings.fearless
     for earlier in games:
-        if earlier.number >= game.number:
+        if earlier.number >= game.number or (
+            earlier.voided and not settings.rule_settings.voided_games_count
+        ):
             continue
         for action in earlier.actions:
             if action.character_id is None:
@@ -49,16 +90,36 @@ def _base_state(
         for team in teams
     }
     index = len(game.actions)
+    complete = index == len(settings.draft_order.turns)
+    assigned = {a.turn_index for a in game.player_assignments}
+    missing = []
+    if not complete:
+        missing.append("draft")
+    if game.winner is None:
+        missing.append("winner")
+    if any(a.kind == "pick" and a.turn_index not in assigned for a in game.actions):
+        missing.append("player_assignments")
     next_turn = None
-    if index < len(settings.draft_order.turns):
+    if index < len(settings.draft_order.turns) and not game.voided:
         turn = settings.draft_order.turns[index]
         team = next(a.team_id for a in game.assignments if a.position == turn.position)
         next_turn = NextTurn(index=index, team_id=team, kind=turn.kind)
     return DraftState(
+        status=(
+            "Voided"
+            if game.voided
+            else "Drafting"
+            if not complete
+            else "Drafted"
+            if missing
+            else "Closed"
+        ),
+        result_pending=complete and game.winner is None and not game.voided,
+        missing=() if game.voided else tuple(missing),
         locks={team: tuple(sorted(locked[team])) for team in teams},
         available=available,
         next_turn=next_turn,
-        complete=next_turn is None,
+        complete=complete,
     )
 
 
@@ -109,6 +170,7 @@ def _fingerprint(
             (g.id, a.model_dump())
             for g in games
             if g.number < game.number
+            and (not g.voided or settings.rule_settings.voided_games_count)
             for a in g.actions
             if a.character_id == action.character_id
             and (a.kind == "pick" or settings.fearless.lock_sources == "picks_and_bans")
@@ -289,8 +351,9 @@ def acknowledge_violation(
 def clear_action(games: Sequence[Game], game: Game, turn_index: int) -> Game:
     """Remove only the most recent action of the current Game."""
     if (
-        not games
-        or games[-1].id != game.id
+        not any(not g.voided for g in games)
+        or game.voided
+        or next(g for g in reversed(games) if not g.voided).id != game.id
         or not game.actions
         or game.actions[-1].turn_index != turn_index
     ):
