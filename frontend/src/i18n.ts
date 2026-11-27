@@ -24,6 +24,11 @@ const en = {
   not_a_pick: 'Assign Players only to recorded picks.', player_not_in_lineup: 'Choose a Player from this Game’s Team Lineup.',
   player_already_assigned: 'Each Player plays one Character per Game.',
 
+  correctionTurn: 'turn {number}', correctionGameTurn: 'Game {game} turn {number}',
+  correctionDuplicate: 'This correction makes {action} a duplicate',
+  correctionFearless: 'This correction makes {action} break a Fearless Lock',
+  correctionWastedBan: 'This correction makes {action} a wasted ban',
+  correctionViolation: 'This correction creates a Violation on {action}: {rule}',
   correctTurn: 'Correct turn {number}', replacementCharacter: 'Replacement Character',
   saveCorrection: 'Save correction', cancelCorrection: 'Cancel correction', retiredCharacter: '{name} · Retired',
   clearLatest: 'Clear latest Draft Action', editHistory: 'Edit history', cleared: 'Cleared',

@@ -312,3 +312,43 @@ def test_bs010_changed_cause_reopens_and_reversal_restores_original_reason(
         ).violations
         == ()
     )
+
+
+@pytest.mark.parametrize("turn_indices", [(0, 1, 6), (0, 6, 7), (6, 7, 8)])
+@pytest.mark.parametrize("edited_occurrence", [0, 1, 2])
+def test_bs010_correction_flags_every_duplicate_after_first_in_draft_order(
+    profile, assignments, character_ids, turn_indices, edited_occurrence
+):
+    # Parent BS-010 confirmed extension: ban/ban/pick, ban/pick/pick and
+    # pick/pick/pick occurrences obey Draft Order regardless of the edited action.
+    from nimbus.engine import correct_action
+
+    turns = profile.snapshot().draft_order.turns
+    edited_turn = turn_indices[edited_occurrence]
+    actions = tuple(
+        DraftAction(
+            turn_index=index,
+            team_id=next(a.team_id for a in assignments if a.position == turns[index].position),
+            kind=turns[index].kind,
+            character_id=(
+                character_ids[1]
+                if index == edited_turn
+                else character_ids[0]
+                if index in turn_indices
+                else character_ids[index + 3]
+            ),
+        )
+        for index in range(max(turn_indices) + 1)
+    )
+    game = Game(id="current", number=1, assignments=assignments, actions=actions)
+    corrected = correct_action(
+        profile.snapshot(), profile.catalog, game, edited_turn, character_ids[0]
+    )
+    state = derive_state(profile.snapshot(), profile.catalog, [corrected], corrected)
+    assert [(v.turn_index, v.rule, v.status) for v in state.violations] == [
+        (turn_indices[1], "duplicate_character", "open"),
+        (turn_indices[2], "duplicate_character", "open"),
+    ]
+    assert tuple(a for a in corrected.actions if a.turn_index != edited_turn) == tuple(
+        a for a in actions if a.turn_index != edited_turn
+    )

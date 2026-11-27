@@ -277,3 +277,45 @@ def test_bs010_schema4_migration_preserves_actions_acknowledgements_and_backup(t
     shutil.copyfile(data / "backups" / backups[0]["name"], restored / "nimbus.sqlite3")
     with CurrentClient(create_app(data_dir=restored)) as client:
         assert client.get(base).json() == previous
+
+
+@pytest.mark.parametrize("turn_indices", [(6, 9), (0, 6, 9), (6, 7, 9)])
+@pytest.mark.parametrize("edited_occurrence", [0, -1])
+def test_bs010_saved_correction_returns_later_duplicate_carriers(
+    tmp_path, turn_indices, edited_occurrence
+):
+    # Parent BS-010 confirmed extension: the edited occurrence may precede or
+    # follow the other occurrences; the API always flags those later in Draft Order.
+    with CurrentClient(create_app(data_dir=tmp_path)) as client:
+        base, actions = start(client)
+        characters = [
+            "Ahri", "Akali", "Alistar", "Annie", "Ashe", "Azir", "Bard", "Braum",
+            "Caitlyn", "Camille",
+        ]
+        for character in characters:
+            result = client.post(actions, json={"character_id": character})
+            assert result.status_code == 201, result.text
+        edited_turn = turn_indices[edited_occurrence]
+        unchanged_occurrences = [i for i in turn_indices if i != edited_turn]
+        duplicate_character = characters[unchanged_occurrences[0]]
+        for turn in unchanged_occurrences[1:]:
+            result = client.post(
+                actions + f"/{turn}/correct", json={"character_id": duplicate_character}
+            )
+            assert result.status_code == 200, result.text
+        before = client.get(base).json()["games"][0]
+        saved = client.post(
+            actions + f"/{edited_turn}/correct", json={"character_id": duplicate_character}
+        )
+        assert saved.status_code == 200, saved.text
+        game = saved.json()["games"][0]
+        assert game["state"]["violations"] == [
+            {"turn_index": turn, "rule": "duplicate_character", "status": "open", "reason": None}
+            for turn in turn_indices[1:]
+        ]
+        assert [a for a in game["actions"] if a["turn_index"] != edited_turn] == [
+            a for a in before["actions"] if a["turn_index"] != edited_turn
+        ]
+        assert game["edit_history"][:-1] == before["edit_history"]
+        assert game["actions"][edited_turn]["character_id"] == duplicate_character
+        assert client.get(base).json() == saved.json()

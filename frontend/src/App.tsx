@@ -23,6 +23,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [backupNotice, setBackupNotice] = useState('');
+  const [correctionImpact, setCorrectionImpact] = useState<string[]>([]);
   const [teamA, setTeamA] = useState('');
   const [teamB, setTeamB] = useState('');
   const [ourTeam, setOurTeam] = useState('');
@@ -70,11 +71,28 @@ export default function App() {
   }
   useEffect(() => { void load(); }, []);
 
-  async function save(path: string, body?: unknown, expectedVersion?: string) {
-    setBusy(true); setError(''); setRejectedRule('');
+  async function save(path: string, body?: unknown, expectedVersion?: string, correctedAction?: { game: string; turn: number }) {
+    setBusy(true); setError(''); setRejectedRule(''); setCorrectionImpact([]);
     try {
       const result = await requestSnapshot<Series>(path, body, expectedVersion ?? editVersion ?? version);
       const updated = result.data;
+      if (correctedAction && series) {
+        setCorrectionImpact(updated.games.flatMap(game => {
+          const previous = series.games.find(g => g.id === game.id);
+          return game.state.violations.filter(violation =>
+            !(game.id === correctedAction.game && violation.turn_index === correctedAction.turn)
+            && !previous?.state.violations.some(v => v.turn_index === violation.turn_index && v.rule === violation.rule)
+          ).map(violation => {
+            const action = game.id === correctedAction.game
+              ? t('correctionTurn', { number: violation.turn_index + 1 })
+              : t('correctionGameTurn', { game: game.number, number: violation.turn_index + 1 });
+            if (violation.rule === 'duplicate_character') return t('correctionDuplicate', { action });
+            if (violation.rule === 'fearless_lock') return t('correctionFearless', { action });
+            if (violation.rule === 'wasted_ban') return t('correctionWastedBan', { action });
+            return t('correctionViolation', { action, rule: errorText(violation.rule) });
+          });
+        }));
+      }
       setCharacter(''); setSearch(''); setOverrideNote('');
       workspace.accept({ data: [updated, ...seriesList.filter(item => item.id !== updated.id)], version: result.version });
       setSelectedId(updated.id); setEditVersion(null); setCorrection(null);
@@ -180,11 +198,11 @@ export default function App() {
     <aside className="sidebar">
       <a className="brand" href="/" aria-label={t('brand')}><span className="brand-mark" aria-hidden="true">N</span>{t('brand')}</a>
       <p className="sidebar-caption">{t('workspace')}</p>
-      <button className="new-series" onClick={() => { setSelectedId(null); setWinnerPrompt(false); setError(''); setEditVersion(null); setCharacter(''); setRejectedRule(''); }} disabled={busy}>{t('newSeries')}</button>
+      <button className="new-series" onClick={() => { setSelectedId(null); setCorrectionImpact([]); setWinnerPrompt(false); setError(''); setEditVersion(null); setCharacter(''); setRejectedRule(''); }} disabled={busy}>{t('newSeries')}</button>
       <h2 className="eyebrow">{t('yourSeries')}</h2>
       <nav className="series-nav">
         {seriesList.map(item => <button key={item.id} className={series?.id === item.id ? 'selected' : ''}
-          disabled={busy} onClick={() => { setSelectedId(item.id); setWinnerPrompt(false); setEditVersion(null); setCharacter(''); setError(''); }}>
+          disabled={busy} onClick={() => { setSelectedId(item.id); setCorrectionImpact([]); setWinnerPrompt(false); setEditVersion(null); setCharacter(''); setError(''); }}>
           {t('vs', { a: item.teams[0].name, b: item.teams[1].name })}
         </button>)}
         {!seriesList.length && <p className="muted">{t('noSeries')}</p>}
@@ -201,6 +219,7 @@ export default function App() {
         {series && <div className="badges" data-testid="series-settings"><span>{displayFormat && `${t(displayFormat.kind)} · ${displayFormat.games}`}</span><span className="fearless-badge">{t(series.rule_snapshot.fearless.id)}</span><span>{t(series.record_type)}</span>{series.patch && <span>{series.patch}</span>}</div>}
       </header>
       {(error || workspace.error || people.error || teams.error) && <div role="alert" className="alert">{error || errorText(workspace.error || people.error || teams.error)}{!profiles.length && <button onClick={() => void load()}>{t('retry')}</button>}</div>}
+      {!!correctionImpact.length && <div role="status" data-testid="correction-impact">{correctionImpact.map(message => <p key={message}>{message}</p>)}</div>}
       {loading || (!workspace.snapshot && !workspace.error) ? <p role="status">{t('loading')}</p> : !series ? <section className="setup panel">
         <div className="setup-intro"><div className="orbit" aria-hidden="true"><span>N</span></div>
           <h2>{t('setupTitle')}</h2><p>{t('setupDescription')}</p></div>
@@ -341,7 +360,7 @@ export default function App() {
               <button disabled={busy} onClick={() => { setCorrection({ game: game.id, turn: action.turn_index, character: action.character_id ?? '' }); setEditVersion(version); }}>{t('correctTurn', { number: action.turn_index + 1 })}</button>
               {correction?.game === game.id && correction.turn === action.turn_index && <form onSubmit={event => {
                 event.preventDefault();
-                void save(`/series/${series.id}/games/${game.id}/actions/${action.turn_index}/correct`, { character_id: correction.character || null });
+                void save(`/series/${series.id}/games/${game.id}/actions/${action.turn_index}/correct`, { character_id: correction.character || null }, undefined, { game: game.id, turn: action.turn_index });
               }}>
                 <label>{t('replacementCharacter')}<select value={correction.character} onChange={event => setCorrection({ ...correction, character: event.target.value })}>
                   {action.kind === 'ban' && <option value="">{t('skippedBan')}</option>}
