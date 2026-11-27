@@ -1,6 +1,9 @@
 // All interface copy is keyed here; profile and user-entered names are data.
 const en = {
   brand: 'Nimbus', workspace: 'Draft workspace', subtitle: 'The next pick starts here.',
+  createBackup: 'Back up Workspace',
+  backupCreated: 'Verified backup saved in your data folder’s backups directory: {name}',
+  backup_failed: 'The backup could not be verified. No usable backup was created. Check the data folder and try again.',
   local: 'Local workspace', newSeries: 'New Series', yourSeries: 'Your Series',
   noSeries: 'Create a Series to begin recording the draft.', titleProfile: 'Title profile',
   teamA: 'Team A name', teamB: 'Team B name', ourTeam: 'Our Team', neither: 'Neither Team',

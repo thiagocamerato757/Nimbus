@@ -15,6 +15,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [backupNotice, setBackupNotice] = useState('');
   const [teamA, setTeamA] = useState('');
   const [teamB, setTeamB] = useState('');
   const [ourTeam, setOurTeam] = useState('');
@@ -57,6 +58,17 @@ export default function App() {
       }
     } finally { setBusy(false); }
   }
+  async function backup() {
+    setBusy(true); setError(''); setBackupNotice('');
+    try {
+      const result = await requestSnapshot<{ name: string }>('/backups', {}, version);
+      setBackupNotice(t('backupCreated', { name: result.data.name }));
+      await workspace.refresh();
+    } catch (e) {
+      setError(errorText(e instanceof ApiError ? e.code : 'unexpected'));
+      if (e instanceof ApiError && e.code === 'stale_version') await workspace.refresh();
+    } finally { setBusy(false); }
+  }
   function create(event: FormEvent) {
     event.preventDefault();
     void save('/series', { profile_id: profileId, team_a: teamA, team_b: teamB, our_team: ourTeam || null });
@@ -89,6 +101,8 @@ export default function App() {
         </button>)}
         {!seriesList.length && <p className="muted">{t('noSeries')}</p>}
       </nav>
+      <button disabled={busy || !version} onClick={() => void backup()}>{t('createBackup')}</button>
+      {backupNotice && <p role="status" className="backup-notice">{backupNotice}</p>}
       <p className="local-label">{t('local')}</p>
     </aside>
     <main>

@@ -9,7 +9,10 @@ from contextlib import closing, contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
+
+from pydantic import BaseModel
 
 from nimbus.models import DraftAction, Game, Series
 
@@ -20,8 +23,21 @@ def default_data_dir() -> Path:
     return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "nimbus"
 
 
+class BackupError(RuntimeError):
+    """No verified backup was produced; the protected operation must stop."""
+
+
+class Backup(BaseModel):
+    name: str
+    kind: Literal["manual", "automatic"]
+    verified: bool = True
+
+
 class Store:
     def __init__(self, directory: Path):
+        self.backup_retention = int(os.environ.get("NIMBUS_BACKUP_RETENTION", "10"))
+        if self.backup_retention < 1:
+            raise ValueError("NIMBUS_BACKUP_RETENTION must be at least 1")
         directory = directory.expanduser().resolve()
         if directory.is_relative_to("/mnt"):
             logging.getLogger(__name__).warning(
@@ -36,7 +52,7 @@ class Store:
             connection.execute("PRAGMA journal_mode=WAL")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
             if version == 1:
-                self.backup_before_migration(connection)
+                self.create_backup("migration")
             if version == 0:
                 migration = Path(__file__).with_name("migrations") / "001_initial.sql"
                 connection.executescript("BEGIN;\n" + migration.read_text() + "\nCOMMIT;")
@@ -146,15 +162,45 @@ class Store:
             raise
         return connection
 
-    def backup_before_migration(self, source: sqlite3.Connection) -> None:
-        """ADR-0032: fail startup before changing facts if a checked backup fails."""
+    def create_backup(self, reason: str | None = None) -> Backup:
+        """Preserve committed facts through SQLite, before the caller changes them.
+
+        Use a dedicated read connection: backing up the request's connection while
+        it holds BEGIN IMMEDIATE would wait on its own write transaction.
+        """
         directory = self.path.parent / "backups"
-        directory.mkdir(exist_ok=True)
+        kind: Literal["manual", "automatic"] = "automatic" if reason else "manual"
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-        path = directory / f"automatic-migration-{timestamp}-{uuid4().hex}.sqlite3"
-        with closing(sqlite3.connect(path)) as backup:
-            source.backup(backup)
-            if backup.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
-                raise RuntimeError(f"Migration backup failed its integrity check: {path}")
-        for expired in sorted(directory.glob("automatic-migration-*.sqlite3"))[:-10]:
-            expired.unlink()
+        label = f"automatic-{reason}" if reason else "manual"
+        path = directory / f"{label}-{timestamp}-{uuid4().hex}.sqlite3"
+        pending = path.with_suffix(".pending")
+        try:
+            directory.mkdir(exist_ok=True)
+            with (
+                closing(sqlite3.connect(self.path)) as source,
+                closing(sqlite3.connect(pending)) as backup,
+            ):
+                source.backup(backup)
+                if backup.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
+                    raise BackupError(f"Backup failed its integrity check: {path}")
+            pending.rename(path)
+        except (sqlite3.Error, OSError, BackupError) as error:
+            pending.unlink(missing_ok=True)
+            raise BackupError(f"Could not create a verified backup: {error}") from error
+        if reason:
+            for expired in sorted(
+                directory.glob("automatic-*.sqlite3"),
+                key=lambda item: item.name.rsplit("-", 2)[-2],
+            )[: -self.backup_retention]:
+                expired.unlink()
+        return Backup(name=path.name, kind=kind)
+
+    def list_backups(self) -> list[Backup]:
+        directory = self.path.parent / "backups"
+        return [
+            Backup(
+                name=path.name, kind="manual" if path.name.startswith("manual-") else "automatic"
+            )
+            for path in sorted(directory.glob("*.sqlite3"), reverse=True)
+            if path.name.startswith(("manual-", "automatic-"))
+        ]

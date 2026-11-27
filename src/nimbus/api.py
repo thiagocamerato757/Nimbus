@@ -10,7 +10,7 @@ from nimbus.engine import derive_state, validate_action
 from nimbus.local_access import LocalAccess
 from nimbus.models import Assignment, DraftAction, Game, GameView, Series, SeriesView, Team, TeamId
 from nimbus.profiles import ProfileLoadError, TitleProfile, load_profiles
-from nimbus.store import Store, default_data_dir
+from nimbus.store import Backup, BackupError, Store, default_data_dir
 from nimbus.workspace import Workspace
 
 
@@ -80,6 +80,17 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
             for game in series.games
         )
         return SeriesView(**series.model_dump(exclude={"games"}), games=games)
+
+    @app.get("/api/backups")
+    def get_backups() -> list[Backup]:
+        return store.list_backups()
+
+    @app.post("/api/backups", status_code=201)
+    def create_backup() -> Backup:
+        try:
+            return store.create_backup()
+        except BackupError as error:
+            raise reject("backup_failed", str(error), 500) from error
 
     @app.get("/api/profiles")
     def get_profiles() -> list[TitleProfile]:

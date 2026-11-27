@@ -196,6 +196,9 @@ For a Windows browser with the servers in WSL2, open `http://localhost:5173`.
 See [local access and concurrent tabs](docs/development/local-access.md) for the
 supported setup, request contract, and two-tab verification.
 
+See [back up and restore a Workspace](docs/development/backups.md) for manual
+backups, automatic retention, and restoring safely with the app closed.
+
 ### Verification
 
 From the repository root:
