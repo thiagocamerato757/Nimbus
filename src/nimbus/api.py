@@ -7,9 +7,11 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from nimbus.engine import derive_state, validate_action
+from nimbus.local_access import LocalAccess
 from nimbus.models import Assignment, DraftAction, Game, GameView, Series, SeriesView, Team, TeamId
 from nimbus.profiles import TitleProfile, load_profiles
 from nimbus.store import Store, default_data_dir
+from nimbus.workspace import Workspace
 
 
 class Request(BaseModel):
@@ -39,6 +41,8 @@ def reject(code: str, message: str, status: int = 409) -> HTTPException:
 def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) -> FastAPI:
     app = FastAPI(title="Nimbus")
     store = Store(data_dir if data_dir is not None else default_data_dir())
+    app.add_middleware(Workspace, store=store)
+    app.add_middleware(LocalAccess)
 
     def profiles() -> dict[str, TitleProfile]:
         return load_profiles(profile_dir)

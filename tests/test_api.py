@@ -3,9 +3,22 @@ from fastapi.testclient import TestClient
 from nimbus.api import create_app
 
 
+class CurrentClient(TestClient):
+    """Existing sequential scenarios submit each edit from their latest API state."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(
+            *args, base_url="http://127.0.0.1:8000", headers={"x-nimbus-app": "1"}, **kwargs
+        )
+
+    def post(self, url, **kwargs):
+        version = self.get("/api/series").headers["x-nimbus-version"]
+        return super().post(url, headers={"x-nimbus-version": version}, **kwargs)
+
+
 def test_bs001_starting_next_game_locks_previous_pick_for_both_teams(tmp_path):
     # Parent BS-001, API seam: starting Game 2 exposes Game 1 picks as locked for both Teams.
-    with TestClient(create_app(data_dir=tmp_path)) as client:
+    with CurrentClient(create_app(data_dir=tmp_path)) as client:
         created = client.post(
             "/api/series",
             json={
@@ -44,7 +57,7 @@ def test_bs001_starting_next_game_locks_previous_pick_for_both_teams(tmp_path):
 
 
 def test_bs009_locked_pick_is_rejected_without_advancing_turn(tmp_path):
-    with TestClient(create_app(data_dir=tmp_path)) as client:
+    with CurrentClient(create_app(data_dir=tmp_path)) as client:
         series = client.post(
             "/api/series",
             json={
@@ -92,7 +105,7 @@ def test_bs009_locked_pick_is_rejected_without_advancing_turn(tmp_path):
 
 
 def test_incomplete_draft_prevents_next_game_and_tracks_side_independently(tmp_path):
-    with TestClient(create_app(data_dir=tmp_path)) as client:
+    with CurrentClient(create_app(data_dir=tmp_path)) as client:
         series = client.post(
             "/api/series",
             json={
@@ -130,7 +143,7 @@ def test_series_snapshot_and_actions_survive_restart_and_profile_edits(tmp_path)
     profile_dir = tmp_path / "profiles"
     shutil.copytree(DEFAULT_PROFILE_DIR, profile_dir)
     data = tmp_path / "data"
-    with TestClient(create_app(data_dir=data, profile_dir=profile_dir)) as client:
+    with CurrentClient(create_app(data_dir=data, profile_dir=profile_dir)) as client:
         series = client.post(
             "/api/series",
             json={
@@ -155,7 +168,7 @@ def test_series_snapshot_and_actions_survive_restart_and_profile_edits(tmp_path)
     rules["draft_orders"][0]["turns"][0]["position"] = "second"
     rules["rule_settings"]["banning_locked"] = "allow"
     path.write_text(yaml.safe_dump(rules))
-    with TestClient(create_app(data_dir=data, profile_dir=profile_dir)) as restarted:
+    with CurrentClient(create_app(data_dir=data, profile_dir=profile_dir)) as restarted:
         restored = restarted.get(base).json()
         assert restored["rule_snapshot"] == series["rule_snapshot"]
         assert restored["our_team"] == "B"

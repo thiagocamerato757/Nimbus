@@ -1,12 +1,17 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { ApiError, request } from './api';
+import { ApiError, request, requestSnapshot } from './api';
+import { useLiveQuery } from './useLiveQuery';
 import { errorText, t } from './i18n';
 import type { Game, Profile, Series, TeamId } from './types';
 
 export default function App() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [seriesList, setSeriesList] = useState<Series[]>([]);
-  const [series, setSeries] = useState<Series | null>(null);
+  const workspace = useLiveQuery<Series[]>('/series');
+  const seriesList = workspace.snapshot?.data ?? [];
+  const version = workspace.snapshot?.version ?? '';
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const series = seriesList.find(item => item.id === selectedId) ?? null;
+  const [editVersion, setEditVersion] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -27,10 +32,8 @@ export default function App() {
   async function load() {
     setLoading(true); setError('');
     try {
-      const [loadedProfiles, loadedSeries] = await Promise.all([
-        request<Profile[]>('/profiles'), request<Series[]>('/series'),
-      ]);
-      setProfiles(loadedProfiles); setSeriesList(loadedSeries);
+      const loadedProfiles = await request<Profile[]>('/profiles');
+      setProfiles(loadedProfiles);
       setProfileId(loadedProfiles[0]?.id ?? ''); setSide(loadedProfiles[0]?.sides[0] ?? '');
     } catch (e) { setError(errorText(e instanceof ApiError ? e.code : 'unexpected')); }
     finally { setLoading(false); }
@@ -40,12 +43,19 @@ export default function App() {
   async function save(path: string, body?: unknown) {
     setBusy(true); setError('');
     try {
-      const updated = await request<Series>(path, body);
-      setSeries(updated);
-      setSeriesList(list => [updated, ...list.filter(item => item.id !== updated.id)]);
+      const result = await requestSnapshot<Series>(path, body, editVersion ?? version);
+      const updated = result.data;
+      workspace.accept({ data: [updated, ...seriesList.filter(item => item.id !== updated.id)], version: result.version });
+      setSelectedId(updated.id); setEditVersion(null);
+      await workspace.refresh();
       setCharacter(''); setSearch('');
-    } catch (e) { setError(errorText(e instanceof ApiError ? e.code : 'unexpected')); }
-    finally { setBusy(false); }
+    } catch (e) {
+      setError(errorText(e instanceof ApiError ? e.code : 'unexpected'));
+      if (e instanceof ApiError && e.code === 'stale_version') {
+        setCharacter(''); setEditVersion(null);
+        await workspace.refresh();
+      }
+    } finally { setBusy(false); }
   }
   function create(event: FormEvent) {
     event.preventDefault();
@@ -70,11 +80,11 @@ export default function App() {
     <aside className="sidebar">
       <a className="brand" href="/" aria-label={t('brand')}><span className="brand-mark" aria-hidden="true">N</span>{t('brand')}</a>
       <p className="sidebar-caption">{t('workspace')}</p>
-      <button className="new-series" onClick={() => { setSeries(null); setError(''); }} disabled={busy}>{t('newSeries')}</button>
+      <button className="new-series" onClick={() => { setSelectedId(null); setError(''); setEditVersion(null); setCharacter(''); }} disabled={busy}>{t('newSeries')}</button>
       <h2 className="eyebrow">{t('yourSeries')}</h2>
       <nav className="series-nav">
         {seriesList.map(item => <button key={item.id} className={series?.id === item.id ? 'selected' : ''}
-          disabled={busy} onClick={() => void save(`/series/${item.id}`)}>
+          disabled={busy} onClick={() => { setSelectedId(item.id); setEditVersion(null); setCharacter(''); setError(''); }}>
           {t('vs', { a: item.teams[0].name, b: item.teams[1].name })}
         </button>)}
         {!seriesList.length && <p className="muted">{t('noSeries')}</p>}
@@ -88,11 +98,11 @@ export default function App() {
         </div>
         <div className="badges"><span>{t('bestOf')}</span><span className="fearless-badge">{t('hard')}</span></div>
       </header>
-      {error && <div role="alert" className="alert">{error}{!profiles.length && <button onClick={() => void load()}>{t('retry')}</button>}</div>}
-      {loading ? <p role="status">{t('loading')}</p> : !series ? <section className="setup panel">
+      {(error || workspace.error) && <div role="alert" className="alert">{error || errorText(workspace.error)}{!profiles.length && <button onClick={() => void load()}>{t('retry')}</button>}</div>}
+      {loading || (!workspace.snapshot && !workspace.error) ? <p role="status">{t('loading')}</p> : !series ? <section className="setup panel">
         <div className="setup-intro"><div className="orbit" aria-hidden="true"><span>N</span></div>
           <h2>{t('setupTitle')}</h2><p>{t('setupDescription')}</p></div>
-        <form onSubmit={create} className="series-form">
+        <form onChangeCapture={() => setEditVersion(previous => previous ?? version)} onSubmit={create} className="series-form">
           <label>{t('titleProfile')}<select value={profileId} onChange={event => {
             setProfileId(event.target.value); setSide(profiles.find(p => p.id === event.target.value)?.sides[0] ?? '');
           }}>{profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
@@ -118,7 +128,7 @@ export default function App() {
             {nextTurn ? <><h2 data-testid="next-turn">{t('turn', { number: nextTurn.index + 1, team: teamName(nextTurn.team_id), kind: t(nextTurn.kind) })}</h2>
               <form className="entry-form" onSubmit={record}>
                 <label>{t('search')}<input value={search} placeholder={t('searchHint')} onChange={e => { setSearch(e.target.value); setCharacter(''); }} /></label>
-                <label>{t('character')}<select value={character} onChange={e => setCharacter(e.target.value)} required>
+                <label>{t('character')}<select value={character} onChange={e => { setCharacter(e.target.value); setEditVersion(version); }} required>
                   <option value="">{t('select')}</option>
                   {profile?.catalog.filter(c => !c.retired && [c.name, ...c.aliases].some(name => name.toLowerCase().includes(search.toLowerCase())))
                     .map(c => <option key={c.id} value={c.id}>{current.state.locks[nextTurn.team_id].includes(c.id) ? t('lockedOption', { name: c.name }) : c.name}</option>)}
@@ -143,7 +153,7 @@ export default function App() {
         </>}
         {(!current || current.state.complete) && series.games.length < 5 ? <section className="next-game panel">
           <div><h2>{t('gameSetup')}</h2><p className="muted">{t('gameSetupHint')}</p></div>
-          <form onSubmit={start} className="next-game-form">
+          <form onChangeCapture={() => setEditVersion(previous => previous ?? version)} onSubmit={start} className="next-game-form">
             <label>{t('sideFor', { team: teamName('A') })}<select value={side} onChange={e => setSide(e.target.value)}>
               {profile?.sides.map(value => <option key={value} value={value}>{value === 'blue' || value === 'red' ? t(value) : value}</option>)}</select></label>
             <label>{t('firstPick')}<select value={firstPick} onChange={e => setFirstPick(e.target.value as TeamId)}>

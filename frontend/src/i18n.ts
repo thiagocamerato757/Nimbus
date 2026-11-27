@@ -26,6 +26,8 @@ const en = {
   loading: 'Loading your workspace…', retry: 'Try again', refresh: 'Refresh',
   network: 'Could not reach Nimbus. Check that the backend is running, then try again.',
   unexpected: 'The request could not be saved. Please try again.',
+  stale_version: 'This edit is outdated. The latest state is shown. Review it and try again.',
+  local_access: 'Nimbus rejected this request because its local access checks failed.',
   fearless_lock: 'Fearless Lock: this Character was picked in an earlier Game.',
   draft_incomplete: 'Complete the current draft before starting the next Game.',
   series_full: 'All Games in this Best-of-5 Series have been started.',

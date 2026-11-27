@@ -192,6 +192,10 @@ Open http://127.0.0.1:5173. Both servers bind loopback only. Data defaults to
 `NIMBUS_DATA_DIR` to choose another folder. Under WSL use a Linux folder;
 startup warns for `/mnt/` storage. The SQLite database is **not encrypted**.
 
+For a Windows browser with the servers in WSL2, open `http://localhost:5173`.
+See [local access and concurrent tabs](docs/development/local-access.md) for the
+supported setup, request contract, and two-tab verification.
+
 ### Verification
 
 From the repository root:
