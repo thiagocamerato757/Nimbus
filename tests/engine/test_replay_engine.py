@@ -149,5 +149,65 @@ def test_bs011_only_latest_voided_attempt_replays_with_structural_actions(
             )
         }
     )
-    with pytest.raises(ValueError, match="invalid_turn"):
+    # ADR-0034 (amended 2026-11-27): a copied draft keeps the source Draft Positions.
+    with pytest.raises(ValueError, match="copy_requires_same_draft_positions"):
         create_replay(settings, profile.catalog, (source,), source, "bad", "copy_draft", swapped)
+
+
+# Parent ADR-0034 (amended 2026-11-27): Draft Positions are editable, but not
+# together with a copied draft; Sides may still change, and new draft is free.
+def test_copied_draft_requires_same_draft_positions(profile, assignments, character_ids):
+    import pytest
+
+    from nimbus.engine import create_replay
+
+    turn = profile.snapshot().draft_order.turns[0]
+    team = "A" if turn.position == "first" else "B"
+    source = Game(
+        id="void",
+        number=2,
+        voided=True,
+        assignments=assignments,
+        actions=(
+            DraftAction(turn_index=0, team_id=team, kind=turn.kind, character_id=character_ids[0]),
+        ),
+    )
+    settings = profile.snapshot()
+    swapped = source.model_copy(
+        update={
+            "assignments": tuple(
+                a.model_copy(update={"position": "second" if a.position == "first" else "first"})
+                for a in assignments
+            )
+        }
+    )
+    new = create_replay(settings, profile.catalog, (source,), source, "new", "new_draft", swapped)
+    assert new.assignments == swapped.assignments and new.actions == ()
+    with pytest.raises(ValueError, match="copy_requires_same_draft_positions"):
+        create_replay(settings, profile.catalog, (source,), source, "copy", "copy_draft", swapped)
+    sides = source.model_copy(
+        update={
+            "assignments": tuple(
+                a.model_copy(update={"side": b.side})
+                for a, b in zip(assignments, reversed(assignments), strict=True)
+            )
+        }
+    )
+    copied = create_replay(
+        settings, profile.catalog, (source,), source, "copy", "copy_draft", sides
+    )
+    assert copied.actions == source.actions and copied.assignments == sides.assignments
+
+
+# Parent BS-012 / #14 (amended 2026-11-27): the engine never applies a pre-fill
+# to a Replay; the holder is whatever the analyst's request carries.
+def test_replay_never_applies_first_selection_prefill(profile, assignments, character_ids):
+    from nimbus.engine import create_replay, first_selection_prefill
+
+    settings = profile.snapshot().model_copy(update={"default_first_selection_holder": "loser"})
+    previous = Game(id="one", number=1, assignments=assignments, winner="A")
+    source = Game(id="void", number=2, voided=True, assignments=assignments)
+    games = (previous, source)
+    assert first_selection_prefill(settings, games, 2) == "B"
+    replay = create_replay(settings, profile.catalog, games, source, "new", "new_draft")
+    assert replay.first_selection_holder is None

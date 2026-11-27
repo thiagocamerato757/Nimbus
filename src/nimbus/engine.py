@@ -65,17 +65,38 @@ def first_selection_prefill(
     return None
 
 
+def current_game(games: Sequence[Game]) -> Game | None:
+    """The last Game of the Series, voided or not (ADR-0008, amended 2026-11-27).
+
+    Live entry, clearing and starting the next Game all use this one definition;
+    earlier Games are fixed only by replacement.
+    """
+    return games[-1] if games else None
+
+
+def draft_complete(settings: RuleSnapshot, game: Game) -> bool:
+    return len(game.actions) == len(settings.draft_order.turns)
+
+
+def is_drafted_or_closed(settings: RuleSnapshot, game: Game) -> bool:
+    """The one rule for a Game that has a result: Drafted or Closed.
+
+    Setting a winner, counting it in Series progress and starting the next Game
+    all use it (#13, Q11; ADR-0034, amended 2026-11-27).
+    """
+    return not game.voided and draft_complete(settings, game)
+
+
 def derive_progress(settings: RuleSnapshot, games: Sequence[Game]) -> SeriesProgress:
     """Recompute score and completion without changing or discarding Games."""
     counted = [g for g in games if not g.voided]
+    # Only a Drafted or Closed Game has a result; a winner left on a Game that
+    # returned to Drafting is ignored until its draft is complete again.
+    drafted = [g for g in games if is_drafted_or_closed(settings, g)]
     score: dict[TeamId, int] = {"A": 0, "B": 0}
-    pending = tuple(
-        g.number
-        for g in counted
-        if len(g.actions) == len(settings.draft_order.turns) and g.winner is None
-    )
+    pending = tuple(g.number for g in drafted if g.winner is None)
     deciding = None
-    for game in counted:
+    for game in drafted:
         if game.winner is not None:
             score[game.winner] += 1
             if deciding is None and score[game.winner] >= settings.series_format.games // 2 + 1:
@@ -86,13 +107,10 @@ def derive_progress(settings: RuleSnapshot, games: Sequence[Game]) -> SeriesProg
     else:
         deciding = None
         past = ()
-        ended = (
-            sum(len(g.actions) == len(settings.draft_order.turns) for g in counted)
-            >= settings.series_format.games
-        )
-    ready = (
-        not games or games[-1].voided or len(games[-1].actions) == len(settings.draft_order.turns)
-    )
+        ended = len(drafted) >= settings.series_format.games
+    # After a Voided Game the next Game is always its Replay (ADR-0034, amended).
+    current = current_game(games)
+    ready = current is None or is_drafted_or_closed(settings, current)
     return SeriesProgress(
         score=score,
         pending_results=pending,
@@ -132,7 +150,7 @@ def _base_state(
         for team in teams
     }
     index = len(game.actions)
-    complete = index == len(settings.draft_order.turns)
+    complete = draft_complete(settings, game)
     assigned = {a.turn_index for a in game.player_assignments}
     missing = []
     if not complete:
@@ -177,6 +195,33 @@ def validate_action(
     return rules[0] if rules else None
 
 
+def structural_error(
+    settings: RuleSnapshot, catalog: Sequence[Character], game: Game, action: DraftAction
+) -> str | None:
+    """The Structural Invariants of one Draft Action in its turn (ADR-0009).
+
+    Live entry, corrections and copied Replay drafts share this check, and it is
+    never overridden. ``game`` holds the Draft Actions recorded before this one.
+    The action fills the next turn (one Draft Action per turn), the turn exists
+    in the Draft Order and belongs to the action's Team and kind, a pick is not
+    skipped, and the Character is in the Character Catalog. A Retired Character
+    is in the Catalog, so it passes here; only a new entry refuses it (see
+    ``check_entry``).
+    """
+    turns = settings.draft_order.turns
+    if action.turn_index != len(game.actions) or not 0 <= action.turn_index < len(turns):
+        return "invalid_turn"
+    turn = turns[action.turn_index]
+    owners = [a.team_id for a in game.assignments if a.position == turn.position]
+    if owners != [action.team_id] or action.kind != turn.kind:
+        return "invalid_turn"
+    if action.character_id is None:
+        return "cannot_skip_pick" if action.kind == "pick" else None
+    if not any(c.id == action.character_id for c in catalog):
+        return "unknown_character"
+    return None
+
+
 def check_entry(
     settings: RuleSnapshot,
     catalog: Sequence[Character],
@@ -185,14 +230,15 @@ def check_entry(
     action: DraftAction,
 ) -> str | None:
     """Structural checks always precede overridable Game Rules."""
-    turn = _base_state(settings, catalog, games, game).next_turn
-    if turn is None:
+    if game.voided:
+        return "game_voided"
+    if draft_complete(settings, game):
         return "draft_complete"
-    if (action.turn_index, action.team_id, action.kind) != (turn.index, turn.team_id, turn.kind):
-        return "invalid_turn"
-    if action.character_id is None:
-        return "cannot_skip_pick" if action.kind == "pick" else None
-    if not any(c.id == action.character_id and not c.retired for c in catalog):
+    error = structural_error(settings, catalog, game, action)
+    if error is not None or action.character_id is None:
+        return error
+    # A Retired Character is never offered for a new entry (BS-015, CONTEXT.md).
+    if any(c.id == action.character_id and c.retired for c in catalog):
         return "unknown_character"
     return validate_action(settings, catalog, games, game, action)
 
@@ -346,16 +392,15 @@ def correct_action(
     character_id: str | None,
 ) -> Game:
     """Replace one recorded Character; Game Rules never block corrections."""
-    action = next((a for a in game.actions if a.turn_index == turn_index), None)
-    if action is None:
+    index = next((i for i, a in enumerate(game.actions) if a.turn_index == turn_index), None)
+    if index is None:
         raise ValueError("action_not_found")
-    if turn_index < 0 or turn_index >= len(settings.draft_order.turns):
-        raise ValueError("invalid_turn")
-    if character_id is None and action.kind == "pick":
-        raise ValueError("cannot_skip_pick")
-    if character_id is not None and not any(c.id == character_id for c in catalog):
-        raise ValueError("unknown_character")
+    action = game.actions[index]
     replacement = action.model_copy(update={"character_id": character_id})
+    earlier = game.model_copy(update={"actions": game.actions[:index]})
+    error = structural_error(settings, catalog, earlier, replacement)
+    if error is not None:
+        raise ValueError(error)
     return game.model_copy(
         update={"actions": tuple(replacement if a == action else a for a in game.actions)}
     )
@@ -392,16 +437,33 @@ def acknowledge_violation(
 
 
 def clear_action(games: Sequence[Game], game: Game, turn_index: int) -> Game:
-    """Remove only the most recent action of the current Game."""
+    """Remove only the most recent action of the current Game.
+
+    A voided current Game has nothing to clear; earlier Games are corrected by
+    replacement (ADR-0008, amended 2026-11-27).
+    """
+    current = current_game(games)
     if (
-        not any(not g.voided for g in games)
+        current is None
+        or current.id != game.id
         or game.voided
-        or next(g for g in reversed(games) if not g.voided).id != game.id
         or not game.actions
         or game.actions[-1].turn_index != turn_index
     ):
         raise ValueError("cannot_clear_action")
     return game.model_copy(update={"actions": game.actions[:-1]})
+
+
+def void_game(games: Sequence[Game], game: Game) -> Game:
+    """Void only the current Game (ADR-0034, amended 2026-11-27).
+
+    Voiding an earlier Game while a later one exists would change the Series'
+    numbering and the Fearless Locks of the Game in progress.
+    """
+    current = current_game(games)
+    if current is None or current.id != game.id:
+        raise ValueError("void_not_current")
+    return game.model_copy(update={"voided": True})
 
 
 def create_replay(
@@ -413,7 +475,11 @@ def create_replay(
     choice: str,
     prefill: Game | None = None,
 ) -> Game:
-    """Create a linked attempt; copied Game Rules flag, structural failures reject."""
+    """Create a linked attempt; copied Game Rules flag, structural failures reject.
+
+    The First Selection holder is left for the caller to record as the analyst
+    sent it; a pre-fill is for display only and is never applied here.
+    """
     if not games or games[-1].id != source.id or not source.voided:
         raise ValueError("replay_unavailable")
     if choice not in {"copy_draft", "new_draft"}:
@@ -423,31 +489,20 @@ def create_replay(
         id=identifier,
         number=source.number,
         replay_of=source.id,
-        first_selection_holder=first_selection_prefill(settings, games, source.number),
         assignments=template.assignments,
         patch=template.patch,
         lineups=template.lineups,
     )
     if choice == "new_draft":
         return replay
+    # Draft Positions are editable, but not together with a copied draft
+    # (ADR-0034, amended 2026-11-27): the copied turns belong to the source's.
+    if _draft_positions(replay) != _draft_positions(source):
+        raise ValueError("copy_requires_same_draft_positions")
     for action in source.actions:
-        if action.turn_index >= len(settings.draft_order.turns):
-            raise ValueError("invalid_turn")
-        turn = settings.draft_order.turns[action.turn_index]
-        teams = [a.team_id for a in replay.assignments if a.position == turn.position]
-        if (
-            action.turn_index != len(replay.actions)
-            or len(teams) != 1
-            or action.team_id != teams[0]
-            or action.kind != turn.kind
-        ):
-            raise ValueError("invalid_turn")
-        if action.character_id is None and action.kind == "pick":
-            raise ValueError("cannot_skip_pick")
-        if action.character_id is not None and not any(
-            c.id == action.character_id for c in catalog
-        ):
-            raise ValueError("unknown_character")
+        error = structural_error(settings, catalog, replay, action)
+        if error is not None:
+            raise ValueError(error)
         original_prefix = source.model_copy(update={"actions": source.actions[: action.turn_index]})
         mapped_prefix = original_prefix.model_copy(update={"id": replay.id})
         acknowledgements = replay.acknowledgements
@@ -490,3 +545,7 @@ def create_replay(
             }
         )
     return replay
+
+
+def _draft_positions(game: Game) -> dict[TeamId, str]:
+    return {a.team_id: a.position for a in game.assignments}

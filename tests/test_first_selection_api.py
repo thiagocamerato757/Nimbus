@@ -137,7 +137,6 @@ def test_bs012_explicit_coupling_map_is_snapshotted_and_replay_respects_it(tmp_p
         )
         game = saved["games"][0]
         path = base + "/games/" + game["id"]
-        post(client, path + "/winner", {"winner": "A"})
         saved = post(client, path + "/void", {})
     rules.write_text(rules.read_text().replace("first_pick_side: red", "first_pick_side: blue"))
     with CurrentClient(create_app(data_dir=data, profile_dir=profiles)) as client:
@@ -160,22 +159,25 @@ def test_bs012_explicit_coupling_map_is_snapshotted_and_replay_respects_it(tmp_p
         assert client.get(base).json()["rule_snapshot"]["first_pick_side"] == "red"
 
 
-# Parent BS-012 profile default: accepting prefill or recording a different
-# holder (including no holder) remains an ordinary editable fact.
+# Parent BS-012 profile default: the pre-fill is computed for display only
+# (#14, amended 2026-11-27). The request's holder is recorded as sent, and an
+# omitted holder records none: the server never applies an unseen pre-fill.
 def test_bs012_configured_holder_is_prefilled_but_never_enforced(tmp_path):
     from test_rosters import complete_draft, start
 
     profiles, _ = configured_profiles(tmp_path, "default_first_selection_holder: loser\n")
     with CurrentClient(create_app(data_dir=tmp_path / "data", profile_dir=profiles)) as client:
         for extra, expected in (
-            ({}, "B"),
+            ({}, None),
+            ({"first_selection_holder": "B"}, "B"),
             ({"first_selection_holder": "A"}, "A"),
             ({"first_selection_holder": None}, None),
         ):
             created = series(client)
             base = "/api/series/" + created["id"]
             game = complete_draft(client, created, start(client, created))
-            post(client, base + "/games/" + game["id"] + "/winner", {"winner": "A"})
+            shown = post(client, base + "/games/" + game["id"] + "/winner", {"winner": "A"})
+            assert shown["next_first_selection_holder"] == "B"
             saved = post(
                 client,
                 base + "/games",
@@ -199,7 +201,7 @@ def test_bs012_replay_default_uses_previous_logical_result_not_voided_source(tmp
 
     profiles, _ = configured_profiles(tmp_path, "default_first_selection_holder: loser\n")
     with CurrentClient(create_app(data_dir=tmp_path / "data", profile_dir=profiles)) as client:
-        created = series(client)
+        created = series(client, fearless={"lock_reach": "none", "lock_sources": "picks"})
         base = "/api/series/" + created["id"]
         previous = complete_draft(client, created, start(client, created))
         previous_path = base + "/games/" + previous["id"]
@@ -215,13 +217,22 @@ def test_bs012_replay_default_uses_previous_logical_result_not_voided_source(tmp
             },
         )["games"][-1]
         path = base + "/games/" + source["id"]
+        complete_draft(client, created, source)
         post(client, path + "/winner", {"winner": "B"})
         post(client, path + "/void", {})
         preview = post(client, path + "/replay-preview", {"draft_choice": "new_draft"})
-        assert preview["first_selection_holder"] == "B"
+        assert preview["first_selection_prefill"] == "B"
+        assert preview["first_selection_holder"] is None
         assert preview["first_selection_choice"] is None
+        shown = post(
+            client,
+            path + "/replay-preview",
+            {"draft_choice": "new_draft", "first_selection_holder": "B"},
+        )
+        assert shown["first_selection_holder"] == "B"
         post(client, previous_path + "/winner", {"winner": None})
         preview = post(client, path + "/replay-preview", {"draft_choice": "new_draft"})
+        assert preview["first_selection_prefill"] is None
         assert preview["first_selection_holder"] is None
         post(client, previous_path + "/winner", {"winner": "A"})
         saved = post(

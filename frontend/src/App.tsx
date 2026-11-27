@@ -24,6 +24,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [backupNotice, setBackupNotice] = useState('');
+  const [setupNotice, setSetupNotice] = useState('');
   const [correctionImpact, setCorrectionImpact] = useState<string[]>([]);
   const [teamA, setTeamA] = useState('');
   const [teamB, setTeamB] = useState('');
@@ -56,6 +57,8 @@ export default function App() {
   const nextTurn = current?.state.next_turn;
   const characterName = (id: string) => profile?.catalog.find(c => c.id === id)?.name ?? id;
   const teamName = (id: TeamId) => series?.teams.find(team => team.id === id)?.name ?? id;
+  // The one "has a result" rule: a winner can be set only on a Drafted or Closed Game.
+  const isDraftedOrClosed = (game: Game) => game.state.status === 'Drafted' || game.state.status === 'Closed';
 
   const creationProfile = profiles.find(p => p.id === profileId);
   const selectedFormat = (formatIndex === '' ? creationProfile?.default_series_format : creationProfile?.series_formats[Number(formatIndex)]);
@@ -67,8 +70,15 @@ export default function App() {
   const seriesSides = series?.rule_snapshot.sides ?? profile?.sides ?? [];
   const setupFirst = series?.rule_snapshot.sides_coupled
     ? (side === series.rule_snapshot.first_pick_side ? 'A' : 'B') : firstPick;
+  const nextNumber = Math.max(0, ...(series?.games ?? []).map(game => game.number)) + 1;
+  // The server never applies a First Selection pre-fill: requests carry what is shown.
+  const shownHolder = selectionHolder ?? series?.next_first_selection_holder ?? '';
+  const replaySource = series?.games.find(game => game.id === replay?.source);
+  const replayHolder = replay?.holder ?? replaySource?.first_selection_prefill ?? '';
+  const copyBlocked = replay?.choice === 'copy_draft'
+    && replay.first !== replaySource?.assignments.find(a => a.position === 'first')?.team_id;
   useEffect(() => {
-    setSelectionHolder(undefined); setSelectionChoice('');
+    setSelectionHolder(undefined); setSelectionChoice(''); setSetupNotice('');
   }, [series?.id, current?.id]);
   useEffect(() => { setSide(seriesSides[0] ?? ''); }, [series?.id]);
 
@@ -85,17 +95,17 @@ export default function App() {
 
   useEffect(() => {
     setReplayPreview(null);
-    if (!replay?.choice || !series) return;
+    if (!replay?.choice || !series || copyBlocked) return;
     let active = true;
     requestSnapshot<Game>(`/series/${series.id}/games/${replay.source}/replay-preview`, {
       draft_choice: replay.choice, team_a_side: replay.side, first_pick_team: replay.first,
       patch: replay.patch || null, lineups: replay.lineups,
-      ...(replay.holder !== undefined ? {first_selection_holder: replay.holder || null} : {}),
+      first_selection_holder: replayHolder || null,
       first_selection_choice: replay.selectionChoice || null,
     }, replay.version).then(result => { if (active) { setReplayPreview(result.data); setError(''); } })
       .catch(e => { if (active) setError(errorText(e instanceof ApiError ? e.code : 'unexpected')); });
     return () => { active = false; };
-  }, [replay, series?.id]);
+  }, [replay, series?.id, replayHolder, copyBlocked]);
 
   function setupReplay() {
     if (!current) return;
@@ -105,7 +115,7 @@ export default function App() {
   }
 
   async function save(path: string, body?: unknown, expectedVersion?: string, correctedAction?: { game: string; turn: number }) {
-    setBusy(true); setError(''); setRejectedRule(''); setCorrectionImpact([]);
+    setBusy(true); setError(''); setRejectedRule(''); setCorrectionImpact([]); setSetupNotice('');
     try {
       const result = await requestSnapshot<Series>(path, body, expectedVersion ?? editVersion ?? version);
       const updated = result.data;
@@ -188,9 +198,17 @@ export default function App() {
       if (!result) return;
       expectedVersion = result.version;
       if (!result.data.progress.can_start_next) { setWinnerPrompt(false); return; }
+      // The result can produce a pre-fill the analyst has not seen yet: show it
+      // in the setup form and let the analyst start the draft from there.
+      const prefill = result.data.next_first_selection_holder ?? '';
+      if (selectionHolder === undefined && prefill !== shownHolder) {
+        setWinnerPrompt(false);
+        setSetupNotice(t('prefillReady', { team: prefill ? teamName(prefill) : t('noSelectionHolder'), number: nextNumber }));
+        return;
+      }
     }
     const result = await save(`/series/${series.id}/games`, { team_a_side: side, first_pick_team: setupFirst, patch: gamePatch || series.patch,
-      ...(selectionHolder !== undefined ? {first_selection_holder: selectionHolder || null} : {}),
+      first_selection_holder: shownHolder || null,
       first_selection_choice: selectionChoice || null }, expectedVersion);
     if (result) setWinnerPrompt(false);
   }
@@ -298,15 +316,15 @@ export default function App() {
       </section> : <>
         <p data-testid="series-score">{series.teams.map(team => `${team.name} ${series.progress.score[team.id]}`).join(' · ')}{series.progress.ended && <> · {t('seriesEnded')}</>}</p>
         {!!series.progress.games_past_decision.length && <p role="alert">{t('pastDecision', { number: series.progress.deciding_game! })}</p>}
-        {current?.voided && !replay && <button disabled={busy} onClick={setupReplay}>{t('replayGame', {number: current.number})}</button>}
+        {current?.voided && !replay && !series.progress.ended && <button disabled={busy} onClick={setupReplay}>{t('replayGame', {number: current.number})}</button>}
         {replay && current?.id === replay.source && <section className="panel" role="region" aria-label={t('replaySetup')}>
           <h2>{t('replaySetup')}</h2>
           <form onSubmit={async event => {
-            event.preventDefault(); if (!replay.choice) return;
+            event.preventDefault(); if (!replay.choice || copyBlocked) return;
             const result = await save(`/series/${series.id}/games/${replay.source}/replay`, {
               draft_choice: replay.choice, team_a_side: replay.side, first_pick_team: replay.first,
               patch: replay.patch || null, lineups: replay.lineups,
-              ...(replay.holder !== undefined ? {first_selection_holder: replay.holder || null} : {}),
+              first_selection_holder: replayHolder || null,
               first_selection_choice: replay.selectionChoice || null,
             }, replay.version);
             if (result) setReplay(null);
@@ -314,7 +332,7 @@ export default function App() {
             <label>{t('replayPatch')}<input maxLength={100} value={replay.patch} onChange={e => setReplay({...replay, patch: e.target.value})} /></label>
             <label>{t('replaySide')}<select value={replay.side} onChange={e => setReplay({...replay, side: e.target.value, first: series.rule_snapshot.sides_coupled ? (e.target.value === series.rule_snapshot.first_pick_side ? 'A' : 'B') : replay.first})}>{seriesSides.map(side => <option key={side} value={side}>{side}</option>)}</select></label>
             <label>{t('replayFirst')}<select value={replay.first} disabled={series.rule_snapshot.sides_coupled} onChange={e => setReplay({...replay, first: e.target.value as TeamId})}>{series.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
-            <FirstSelectionFields teams={series.teams} holder={replay.holder ?? current.first_selection_prefill ?? ''} choice={replay.selectionChoice ?? ''} onHolder={holder => setReplay({...replay, holder})} onChoice={selectionChoice => setReplay({...replay, selectionChoice})} />
+            <FirstSelectionFields teams={series.teams} holder={replayHolder} choice={replay.selectionChoice ?? ''} onHolder={holder => setReplay({...replay, holder})} onChoice={selectionChoice => setReplay({...replay, selectionChoice})} />
             {series.teams.map(team => <label key={team.id}>{t('replayLineup', {team: team.name})}<select multiple value={replay.lineups[team.id]} onChange={e => setReplay({...replay, lineups: {...replay.lineups, [team.id]: [...e.target.selectedOptions].map(option => option.value)}})}>
               {players.filter(player => player.current_team_id === team.roster_id || current.lineups[team.id].includes(player.id)).map(player => <option key={player.id} value={player.id}>{player.name}</option>)}
             </select></label>)}
@@ -322,7 +340,8 @@ export default function App() {
               <label><input type="radio" name="replay-choice" checked={replay.choice === 'copy_draft'} onChange={() => setReplay({...replay, choice: 'copy_draft'})} />{t('copyDraft')}</label>
               <label><input type="radio" name="replay-choice" checked={replay.choice === 'new_draft'} onChange={() => setReplay({...replay, choice: 'new_draft'})} />{t('newDraft')}</label>
             </fieldset>
-            <button disabled={busy || !replay.choice}>{t('createReplay')}</button>
+            {copyBlocked && <p role="alert" data-testid="copy-blocked">{t('copy_requires_same_draft_positions')}</p>}
+            <button disabled={busy || !replay.choice || copyBlocked}>{t('createReplay')}</button>
             <button type="button" onClick={() => setReplay(null)}>{t('cancelReplay')}</button>
           </form>
           {replayPreview && <div data-testid="replay-preview"><h3>{t('replayPreview')}</h3>{series.teams.map(team => <div key={team.id}>{actionList(replayPreview, team.id, 'pick')}{actionList(replayPreview, team.id, 'ban')}</div>)}{violationList(replayPreview, true)}</div>}
@@ -399,23 +418,26 @@ export default function App() {
               {seriesSides.map(value => <option key={value} value={value}>{value === 'blue' || value === 'red' ? t(value) : value}</option>)}</select></label>
             <label>{t('firstPick')}<select aria-label={t('firstPick')} value={setupFirst} disabled={series.rule_snapshot.sides_coupled} onChange={e => setFirstPick(e.target.value as TeamId)}>
               {series.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
-            <FirstSelectionFields teams={series.teams} holder={selectionHolder ?? series.next_first_selection_holder ?? ''} choice={selectionChoice} onHolder={setSelectionHolder} onChoice={setSelectionChoice} />
+            <FirstSelectionFields teams={series.teams} holder={shownHolder} choice={selectionChoice} onHolder={setSelectionHolder} onChoice={setSelectionChoice} />
+            {setupNotice && <p role="status" data-testid="prefill-notice">{setupNotice}</p>}
             <p className="muted">{t('selectionHint')}</p>
             <label>{t('gamePatch')}<input value={gamePatch} placeholder={series.patch ?? ''} onChange={e => setGamePatch(e.target.value)} maxLength={100} /></label>
-            <button className="primary" disabled={busy}>{t('startGame', { number: Math.max(0, ...series.games.map(game => game.number)) + 1 })}</button>
+            <button className="primary" disabled={busy}>{t('startGame', { number: nextNumber })}</button>
           </form>
-        </section> : <p className="muted">{series.progress.ended ? t('seriesEnded') : series.games.filter(g => !g.voided).length >= series.rule_snapshot.series_format.games ? t('allStarted') : t('remaining')}</p>}
+        </section> : <p className="muted">{series.progress.ended ? t('seriesEnded') : current?.voided ? t('replay_required') : series.games.filter(g => !g.voided).length >= series.rule_snapshot.series_format.games ? t('allStarted') : t('remaining')}</p>}
         {!!series.games.length && <section className="timeline" data-testid="timeline"><div className="section-title"><h2>{t('timeline')}</h2><p>{t('timelineHint')}</p></div>
           {series.games.map(game => <details id={`game-${game.id}`} className="timeline-game panel" key={game.id} open={game.id !== current?.id}>
             <summary><strong>{t('game', { number: game.number })}{game.replay_of && <> · {t('replayOf', {number: game.number})}</>}</strong><span>{t(game.state.status)}{game.state.result_pending && <> · {t('resultPending')}</>}</span></summary>
             {game.replay_of && <a href={`#game-${game.replay_of}`}>{t('viewSource')}</a>}
-            <form key={game.winner ?? 'pending'} onChangeCapture={() => setEditVersion(previous => previous ?? version)} onSubmit={event => {
+            {isDraftedOrClosed(game) && <form key={game.winner ?? 'pending'} onChangeCapture={() => setEditVersion(previous => previous ?? version)} onSubmit={event => {
               event.preventDefault(); const fields = new FormData(event.currentTarget);
               void save(`/series/${series.id}/games/${game.id}/winner`, { winner: fields.get('winner') || null });
             }}>
               <label>{t('winner')}<select aria-label={t('winner')} name="winner" defaultValue={game.winner ?? ''}><option value="">{t('resultPending')}</option>{series.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
               <button disabled={busy}>{t('saveWinner')}</button>
-            </form>
+            </form>}
+            {!isDraftedOrClosed(game) && game.winner !== null && <p>{t(game.voided ? 'storedWinnerVoided' : 'storedWinner', { team: teamName(game.winner) })}
+              <button disabled={busy} onClick={() => void save(`/series/${series.id}/games/${game.id}/winner`, { winner: null })}>{t('clearWinner')}</button></p>}
             <section aria-label={t('selectionForGame', {number: game.number})}>
               <form key={`${game.id}-${game.first_selection_holder}-${game.first_selection_choice}`}
                 onChangeCapture={() => setEditVersion(previous => previous ?? version)} onSubmit={event => {
@@ -429,7 +451,7 @@ export default function App() {
                 <button disabled={busy}>{t('saveSelection')}</button>
               </form>
             </section>
-            {!game.voided && <button disabled={busy} onClick={() => void save(`/series/${series.id}/games/${game.id}/void`, {})}>{t('voidGame')}</button>}
+            {!game.voided && game.id === current?.id && <button disabled={busy} onClick={() => void save(`/series/${series.id}/games/${game.id}/void`, {})}>{t('voidGame')}</button>}
             {game.id !== current?.id && profile && <GamePlayers game={game} series={series} profile={profile} players={players} busy={busy}
               onEdit={() => setEditVersion(previous => previous ?? version)} onSave={async (path, body) => { await save(path, body); }} />}
             <div className="timeline-teams">{series.teams.map(team => <div key={team.id}><h3>{team.name}</h3>

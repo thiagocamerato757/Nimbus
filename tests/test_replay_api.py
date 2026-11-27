@@ -70,7 +70,6 @@ def test_bs011_preview_prefill_violation_scope_and_structural_rejection(tmp_path
         )
         post(client, path + "/actions", {"character_id": "Akali"})
         post(client, path + "/actions/2/correct", {"character_id": "Ahri"})
-        post(client, path + "/winner", {"winner": "B"})
         post(client, path + "/void", {})
         before = client.get(base)
         preview = post(client, path + "/replay-preview", {"draft_choice": "copy_draft"})
@@ -87,7 +86,8 @@ def test_bs011_preview_prefill_violation_scope_and_structural_rejection(tmp_path
         response = client.post(
             path + "/replay", json={"draft_choice": "copy_draft", "first_pick_team": "B"}
         )
-        assert response.status_code == 409 and response.json()["detail"]["code"] == "invalid_turn"
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "copy_requires_same_draft_positions"
         assert client.get(base).json() == before.json()
         saved = post(
             client,
@@ -128,16 +128,21 @@ def test_bs011_chain_latest_guard_and_stale_write_are_atomic(tmp_path):
         )["games"][-1]
         assert chain["number"] == 1 and chain["replay_of"] == first["id"]
         assert next(a for a in chain["assignments"] if a["position"] == "first")["team_id"] == "B"
-        post(client, base + f"/games/{chain['id']}/void", {})
-        following = post(client, base + "/games", {"team_a_side": "blue", "first_pick_team": "A"})
-        assert [g["number"] for g in following["games"]] == [1, 1, 1, 2]
+        following = post(client, base + f"/games/{chain['id']}/void", {})
+        # ADR-0034 (amended 2026-11-27): after a void, the next Game is its Replay.
         rejected = client.post(
-            base + f"/games/{chain['id']}/replay", json={"draft_choice": "new_draft"}
+            base + "/games", json={"team_a_side": "blue", "first_pick_team": "A"}
+        )
+        assert rejected.status_code == 409
+        assert rejected.json()["detail"]["code"] == "replay_required"
+        rejected = client.post(
+            base + f"/games/{first['id']}/replay", json={"draft_choice": "new_draft"}
         )
         assert (
             rejected.status_code == 409
             and rejected.json()["detail"]["code"] == "replay_unavailable"
         )
+        assert [g["number"] for g in following["games"]] == [1, 1, 1]
         assert client.get(base).json() == following
 
 
@@ -184,7 +189,6 @@ def test_bs011_migration_and_verified_restore_preserve_records(tmp_path, old_ver
         post(client, path + "/player-assignments", {"turn_index": 6, "player_id": person["id"]})
         post(client, path + "/actions/0/correct", {"character_id": "Akali"})
         post(client, path + "/actions/0/correct", {"character_id": "Ahri"})
-        post(client, path + "/winner", {"winner": "A"})
         post(client, path + "/void", {})
         expected = client.get(base).json()
     # Rebuild schema-7 fixture, preserving all previous columns/children.
@@ -231,26 +235,71 @@ def test_bs011_azir_locks_game_four_but_never_its_same_number_replay(tmp_path):
     with CurrentClient(create_app(data_dir=tmp_path / "data", profile_dir=profiles)) as client:
         created = series(client)
         base = f"/api/series/{created['id']}"
+        turns = created["rule_snapshot"]["draft_order"]["turns"]
+        catalog = client.get("/api/profiles").json()[0]["catalog"]
+        picks = iter(c["id"] for c in catalog if not c["retired"] and c["id"] != "Azir")
+
+        def fill(game, azir=False):
+            # Bans are skipped; each pick is a Character unused in this Series.
+            for turn in turns[len(game["actions"]) :]:
+                if turn["kind"] == "ban":
+                    choice = None
+                else:
+                    choice = "Azir" if azir else next(picks)
+                    azir = False
+                post(client, base + f"/games/{game['id']}/actions", {"character_id": choice})
+
+        setup = {"team_a_side": "blue", "first_pick_team": "A"}
         for _ in range(2):
-            g = post(client, base + "/games", {"team_a_side": "blue", "first_pick_team": "A"})[
-                "games"
-            ][-1]
-            post(client, base + f"/games/{g['id']}/void", {})
-        source = post(client, base + "/games", {"team_a_side": "blue", "first_pick_team": "A"})[
-            "games"
-        ][-1]
+            fill(post(client, base + "/games", setup)["games"][-1])
+        source = post(client, base + "/games", setup)["games"][-1]
+        assert source["number"] == 3
         path = base + f"/games/{source['id']}"
         for _ in range(6):
             post(client, path + "/actions", {"character_id": None})
         post(client, path + "/actions", {"character_id": "Azir"})
         post(client, path + "/void", {})
-        replay = post(client, path + "/replay", {"draft_choice": "copy_draft"})["games"][-1]
-        assert replay["number"] == 3
-        assert replay["state"]["locks"] == {"A": [], "B": []}
-        assert replay["state"]["violations"] == []
-        post(client, base + f"/games/{replay['id']}/void", {})
-        fourth = post(client, base + "/games", {"team_a_side": "blue", "first_pick_team": "A"})[
-            "games"
-        ][-1]
+        copy = post(client, path + "/replay-preview", {"draft_choice": "copy_draft"})
+        assert copy["number"] == 3
+        assert copy["actions"][-1]["character_id"] == "Azir"
+        assert "Azir" not in copy["state"]["locks"]["A"] + copy["state"]["locks"]["B"]
+        assert copy["state"]["violations"] == []
+        # ADR-0034 (amended 2026-11-27): Game 4 follows a non-voided Game 3. A new
+        # draft without Azir isolates the counted voided attempt as the lock's cause.
+        replay = post(client, path + "/replay", {"draft_choice": "new_draft"})["games"][-1]
+        fill(replay)
+        fourth = post(client, base + "/games", setup)["games"][-1]
         assert fourth["number"] == 4
-        assert fourth["state"]["locks"] == {"A": ["Azir"], "B": ["Azir"]}
+        assert "Azir" in fourth["state"]["locks"]["A"]
+        assert "Azir" in fourth["state"]["locks"]["B"]
+
+
+# Parent ADR-0034 / #13 (amended 2026-11-27): Draft Positions are editable for a
+# new draft, but copying the draft requires the same Draft Positions. Preview and
+# creation reject the combination with a specific code and change nothing.
+def test_copying_a_draft_requires_the_same_draft_positions(tmp_path):
+    with CurrentClient(create_app(data_dir=tmp_path)) as client:
+        base, source = voided(client)
+        path = base + f"/games/{source['id']}"
+        before = client.get(base)
+        changed = {"draft_choice": "copy_draft", "first_pick_team": "B"}
+        for endpoint in ("/replay-preview", "/replay"):
+            response = client.post(path + endpoint, json=changed)
+            assert response.status_code == 409, response.text
+            assert response.json()["detail"] == {
+                "code": "copy_requires_same_draft_positions",
+                "message": "Copying the draft requires the same Draft Positions; "
+                "keep them or choose new draft.",
+            }
+        assert client.get(base).json() == before.json()
+        assert client.get(base).headers["x-nimbus-version"] == before.headers["x-nimbus-version"]
+        sides = post(
+            client, path + "/replay-preview", {"draft_choice": "copy_draft", "team_a_side": "red"}
+        )
+        assert len(sides["actions"]) == 1
+        saved = post(
+            client, path + "/replay", {"draft_choice": "new_draft", "first_pick_team": "B"}
+        )
+        replay = saved["games"][-1]
+        assert replay["actions"] == []
+        assert next(a for a in replay["assignments"] if a["position"] == "first")["team_id"] == "B"

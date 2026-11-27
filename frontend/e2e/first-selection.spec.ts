@@ -76,3 +76,44 @@ test('shows pending/known-result holder prefill and explicit coupled Draft Posit
   await setup.getByRole('button', {name: 'Start Game 2', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'Turn 1 · Coupled Owls · Ban'})).toBeVisible();
 });
+
+// Parent BS-012 / #14 (amended 2026-11-27): the server never applies a pre-fill
+// the analyst has not seen. "Record winner and start" stops to show the holder
+// the result pre-filled; the draft begins only when the analyst starts it.
+test('shows the pre-filled holder after recording the winner before the draft begins', async ({ page, request }) => {
+  async function post(path: string, data: unknown) {
+    const current = await request.get('/api/series');
+    const response = await request.post(path, {headers: {
+      'X-Nimbus-App': '1', 'X-Nimbus-Version': current.headers()['x-nimbus-version'],
+    }, data});
+    expect(response.ok(), await response.text()).toBeTruthy();
+    return response.json();
+  }
+  let series = await post('/api/series', {profile_id: 'selection-fixture', team_a: 'Prefill Owls', team_b: 'Prefill Foxes'});
+  series = await post(`/api/series/${series.id}/games`, {team_a_side: 'blue', first_pick_team: 'B'});
+  const path = `/api/series/${series.id}/games/${series.games[0].id}`;
+  const profiles = await (await request.get('/api/profiles')).json();
+  const profile = profiles.find((p: {id: string}) => p.id === 'selection-fixture');
+  for (let i = 0; i < series.rule_snapshot.draft_order.turns.length; i++) {
+    await post(path + '/actions', {character_id: profile.catalog[i].id});
+  }
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Prefill Owls vs Prefill Foxes', exact: true}).click();
+  const setup = page.locator('.next-game');
+  await expect(setup.getByLabel('First Selection holder')).toHaveValue('');
+  await setup.getByRole('button', {name: 'Start Game 2', exact: true}).click();
+  const prompt = page.getByRole('dialog', {name: 'Record the previous Game’s winner'});
+  await prompt.getByLabel('Winner').selectOption('A');
+  await prompt.getByRole('button', {name: 'Record winner and start', exact: true}).click();
+  await expect(prompt).toHaveCount(0);
+  await expect(page.getByTestId('prefill-notice')).toHaveText('First Selection holder pre-filled from the result: Prefill Foxes. Check it, then start Game 2.');
+  await expect(setup.getByLabel('First Selection holder')).toHaveValue('B');
+  const before = await (await request.get(`/api/series/${series.id}`)).json();
+  expect(before.games).toHaveLength(1);
+  expect(before.games[0].winner).toBe('A');
+  await setup.getByRole('button', {name: 'Start Game 2', exact: true}).click();
+  await expect(page.getByTestId('draft-progress')).toHaveText('0 / 20 turns');
+  const after = await (await request.get(`/api/series/${series.id}`)).json();
+  expect(after.games).toHaveLength(2);
+  expect(after.games[1].first_selection_holder).toBe('B');
+});

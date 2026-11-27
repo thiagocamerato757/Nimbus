@@ -327,3 +327,34 @@ def test_bs010_saved_correction_returns_later_duplicate_carriers(
         assert game["edit_history"][:-1] == before["edit_history"]
         assert game["actions"][edited_turn]["character_id"] == duplicate_character
         assert client.get(base).json() == saved.json()
+
+
+# Parent BS-010 / ADR-0008 (amended 2026-11-27), regression from the PR #34
+# review: Given Game 1 Drafted and Game 2 Voided, the current Game is Game 2.
+# Clearing Game 1's last action is rejected and changes nothing, so Game 1 can
+# never be left Drafting behind a later Game; it is fixed by replacement.
+def test_bs010_clearing_an_earlier_game_behind_a_voided_game_is_rejected(tmp_path):
+    from test_rosters import complete_draft, series
+    from test_rosters import start as start_game
+
+    with CurrentClient(create_app(data_dir=tmp_path)) as client:
+        created = series(client)
+        base = f"/api/series/{created['id']}"
+        first = complete_draft(client, created, start_game(client, created))
+        second = start_game(client, created)
+        assert client.post(base + f"/games/{second['id']}/void", json={}).status_code == 200
+        before = client.get(base)
+        last = first["actions"][-1]["turn_index"]
+        for game_id, turn in ((first["id"], last), (second["id"], 0)):
+            response = client.post(base + f"/games/{game_id}/actions/{turn}/clear", json={})
+            assert response.status_code == 409, response.text
+            assert response.json()["detail"]["code"] == "cannot_clear_action"
+        after = client.get(base)
+        assert after.json() == before.json()
+        assert after.headers["x-nimbus-version"] == before.headers["x-nimbus-version"]
+        assert after.json()["games"][0]["state"]["status"] == "Drafted"
+        corrected = client.post(
+            base + f"/games/{first['id']}/actions/{last}/correct", json={"character_id": "Zyra"}
+        )
+        assert corrected.status_code == 200, corrected.text
+        assert corrected.json()["games"][0]["state"]["status"] == "Drafted"

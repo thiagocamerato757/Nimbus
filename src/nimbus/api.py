@@ -12,11 +12,14 @@ from nimbus.engine import (
     clear_action,
     correct_action,
     create_replay,
+    current_game,
     derive_progress,
     derive_state,
     first_selection_prefill,
     game_assignments,
+    is_drafted_or_closed,
     record_entry,
+    void_game,
 )
 from nimbus.local_access import LocalAccess
 from nimbus.models import (
@@ -78,6 +81,8 @@ class EditPlayer(Request):
 
 
 class FirstSelection(Request):
+    # The holder is recorded exactly as sent; an omitted holder records none.
+    # A pre-fill is only displayed, never applied by the server (#14, amended).
     first_selection_holder: TeamId | None = None
     first_selection_choice: Literal["side", "draft_position"] | None = None
 
@@ -185,6 +190,12 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
                 max((g.number for g in series.games), default=0) + 1,
             ),
         )
+
+    def reject_if_ended(series: Series) -> None:
+        # One gate for every way the next Game starts, ordinary or Replay
+        # (ADR-0034, amended). "Ended" is derived from the current score.
+        if derive_progress(series.rule_snapshot, series.games).ended:
+            raise reject("series_ended", "The Series has reached its deciding Game.")
 
     def check_team(team_id: str | None) -> None:
         if team_id is not None and not any(t.id == team_id for t in store.list_teams()):
@@ -329,36 +340,26 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
     @app.post("/api/series/{identifier}/games", status_code=201)
     def start_game(identifier: str, request: StartGame) -> SeriesView:
         series = read(identifier)
-        profile = profiles()[series.profile_id]
-        if (
-            series.games
-            and not series.games[-1].voided
-            and not derive_state(
-                series.rule_snapshot, profile.catalog, series.games, series.games[-1]
-            ).complete
-        ):
+        current = current_game(series.games)
+        if current is not None and current.voided:
+            raise reject(
+                "replay_required",
+                "After a Voided Game, replay it: copy its draft or choose new draft.",
+            )
+        if current is not None and not is_drafted_or_closed(series.rule_snapshot, current):
             raise reject(
                 "draft_incomplete", "Complete the current draft before starting the next Game."
             )
         if sum(not g.voided for g in series.games) >= series.rule_snapshot.series_format.games:
             raise reject("series_full", "All Games in this Series Format have been started.")
-        if derive_progress(series.rule_snapshot, series.games).ended:
-            raise reject("series_ended", "The Series has reached its deciding Game.")
+        reject_if_ended(series)
         assignments = setup_assignments(series, request.team_a_side, request.first_pick_team)
         game = Game(
             id=uuid4().hex,
             number=max((g.number for g in series.games), default=0) + 1,
             lineups=series.games[-1].lineups if series.games else {"A": (), "B": ()},
             assignments=assignments,
-            first_selection_holder=(
-                request.first_selection_holder
-                if "first_selection_holder" in request.model_fields_set
-                else first_selection_prefill(
-                    series.rule_snapshot,
-                    series.games,
-                    max((g.number for g in series.games), default=0) + 1,
-                )
-            ),
+            first_selection_holder=request.first_selection_holder,
             first_selection_choice=request.first_selection_choice,
             patch=request.patch if request.patch is not None else series.patch,
         )
@@ -374,6 +375,7 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
     def replay_candidate(identifier: str, game_id: str, request: ReplayGame) -> tuple[Series, Game]:
         series = read(identifier)
         source = find_game(series, game_id)
+        reject_if_ended(series)
         profile = profiles()[series.profile_id]
         side = request.team_a_side or next(a.side for a in source.assignments if a.team_id == "A")
         first: TeamId = (
@@ -424,9 +426,12 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
                 prefill,
             )
         except ValueError as error:
+            code = str(error)
             raise reject(
-                str(error),
-                "Replay must preserve Structural Invariants and follow the latest Voided attempt.",
+                code,
+                "Copying the draft requires the same Draft Positions; keep them or choose new draft."
+                if code == "copy_requires_same_draft_positions"
+                else "Replay must preserve Structural Invariants and follow the latest Voided attempt.",
             ) from None
         replay = replay.model_copy(
             update={
@@ -442,6 +447,9 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
         series, replay = replay_candidate(identifier, game_id, request)
         return GameView(
             **replay.model_dump(),
+            first_selection_prefill=first_selection_prefill(
+                series.rule_snapshot, series.games, replay.number
+            ),
             state=derive_state(
                 series.rule_snapshot,
                 profiles()[series.profile_id].catalog,
@@ -464,13 +472,25 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
 
     @app.post("/api/series/{identifier}/games/{game_id}/winner")
     def edit_winner(identifier: str, game_id: str, request: EditWinner) -> SeriesView:
-        game = find_game(read(identifier), game_id)
+        series = read(identifier)
+        game = find_game(series, game_id)
+        # A winner is set only for a Drafted or Closed Game (#13, Q11); clearing
+        # is allowed in any status, so a stored winner can always be removed.
+        if request.winner is not None and not is_drafted_or_closed(series.rule_snapshot, game):
+            raise reject("winner_not_allowed", "Record a winner only for a Drafted or Closed Game.")
         store.save_winner(game.id, request.winner)
         return view(read(identifier))
 
     @app.post("/api/series/{identifier}/games/{game_id}/void")
-    def void_game(identifier: str, game_id: str) -> SeriesView:
-        game = find_game(read(identifier), game_id)
+    def void(identifier: str, game_id: str) -> SeriesView:
+        series = read(identifier)
+        try:
+            game = void_game(series.games, find_game(series, game_id))
+        except ValueError as error:
+            raise reject(
+                str(error),
+                "Only the current Game can be voided; correct earlier Games by replacement.",
+            ) from error
         store.void_game(game.id)
         return view(read(identifier))
 
@@ -536,9 +556,11 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
     @app.post("/api/series/{identifier}/games/{game_id}/actions", status_code=201)
     def enter_action(identifier: str, game_id: str, request: EnterAction) -> SeriesView:
         series = read(identifier)
-        if not series.games or series.games[-1].id != game_id:
+        game = current_game(series.games)
+        if game is None or game.id != game_id:
             raise reject("not_current_game", "Enter Draft Actions in the current Game.")
-        game = series.games[-1]
+        if game.voided:
+            raise reject("game_voided", "A Voided Game takes no Draft Actions; replay it instead.")
         profile = profiles()[series.profile_id]
         state = derive_state(series.rule_snapshot, profile.catalog, series.games, game)
         turn = state.next_turn

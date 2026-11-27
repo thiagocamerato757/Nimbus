@@ -43,8 +43,14 @@ test('requires explicit draft choice and shows prefill, carried reasons and link
   await expect(page.getByTestId('game-patch')).toHaveText('26.2');
   await timeline.locator('details').last().getByRole('button', {name: 'Void Game', exact: true}).click();
   await page.getByRole('button', {name: 'Replay Game 1', exact: true}).click();
-  await setup.getByLabel('New draft', {exact: true}).check();
+  // ADR-0034 (amended 2026-11-27): Draft Positions are editable, but not with a copied draft.
+  await setup.getByLabel('Copy the voided Game’s draft').check();
   await setup.getByLabel('Replay First-pick Team').selectOption('B');
+  await expect(setup.getByTestId('copy-blocked')).toHaveText('Copying the draft requires the same Draft Positions; keep them or choose new draft.');
+  await expect(setup.getByRole('button', {name: 'Create Replay', exact: true})).toBeDisabled();
+  await expect(setup.getByTestId('replay-preview')).toHaveCount(0);
+  await setup.getByLabel('New draft', {exact: true}).check();
+  await expect(setup.getByTestId('copy-blocked')).toHaveCount(0);
   await setup.getByRole('button', {name: 'Create Replay', exact: true}).click();
   await expect(timeline.locator('details')).toHaveCount(3);
   await expect(page.getByTestId('draft-progress')).toHaveText('0 / 20 turns');

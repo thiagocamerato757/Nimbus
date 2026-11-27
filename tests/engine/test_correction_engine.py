@@ -4,6 +4,25 @@ from nimbus.engine import derive_state
 from nimbus.models import DraftAction, Game
 
 
+def recorded_pick(profile, first_pick_index, character_id):
+    """Skipped bans up to the first pick, then that pick: a contiguous record
+    (one Draft Action per turn, ADR-0009), as live entry always produces."""
+    turns = profile.snapshot().draft_order.turns
+    bans = tuple(
+        DraftAction(
+            turn_index=i,
+            team_id="A" if turns[i].position == "first" else "B",
+            kind=turns[i].kind,
+            character_id=None,
+        )
+        for i in range(first_pick_index)
+    )
+    pick = DraftAction(
+        turn_index=first_pick_index, team_id="A", kind="pick", character_id=character_id
+    )
+    return (*bans, pick)
+
+
 def test_bs010_correcting_earlier_pick_flags_unchanged_later_pick(
     profile, assignments, character_ids, first_pick_index
 ):
@@ -15,11 +34,7 @@ def test_bs010_correcting_earlier_pick_flags_unchanged_later_pick(
         id="one",
         number=1,
         assignments=assignments,
-        actions=(
-            DraftAction(
-                turn_index=first_pick_index, team_id="A", kind="pick", character_id=character_ids[0]
-            ),
-        ),
+        actions=recorded_pick(profile, first_pick_index, character_ids[0]),
     )
     later = Game(
         id="three",
@@ -35,7 +50,7 @@ def test_bs010_correcting_earlier_pick_flags_unchanged_later_pick(
         profile.snapshot(), profile.catalog, earlier, first_pick_index, character_ids[1]
     )
     state = derive_state(profile.snapshot(), profile.catalog, [corrected, later], later)
-    assert corrected.actions[0].character_id == character_ids[1]
+    assert corrected.actions[-1].character_id == character_ids[1]
     assert later.actions[0].character_id == character_ids[1]
     assert [(v.turn_index, v.rule, v.status) for v in state.violations] == [
         (first_pick_index, "fearless_lock", "open")
@@ -202,23 +217,36 @@ def test_bs010_structural_invariants_still_apply(
     from nimbus.engine import correct_action
 
     # Parent BS-010 acceptance: replacement may break Game Rules, never structure.
+    # The recorded turns are contiguous (one Draft Action per turn, ADR-0009).
+    settings = profile.snapshot()
+    turns = settings.draft_order.turns
+    pick = next(i for i, t in enumerate(turns) if t.kind == "pick")
     game = Game(
         id="current",
         number=1,
         assignments=assignments,
-        actions=(
-            DraftAction(turn_index=0, team_id="A", kind="ban", character_id=character_ids[0]),
-            DraftAction(turn_index=6, team_id="A", kind="pick", character_id=character_ids[1]),
+        actions=tuple(
+            DraftAction(
+                turn_index=i,
+                team_id="A" if turns[i].position == "first" else "B",
+                kind=turns[i].kind,
+                character_id=character_ids[i],
+            )
+            for i in range(pick + 1)
         ),
     )
     with pytest.raises(ValueError, match=error):
         correct_action(
-            profile.snapshot(),
+            settings,
             profile.catalog,
             game,
-            turn,
+            pick if turn == 6 else turn,
             character_ids[0] if character == "known" else character,
         )
+    # A recorded gap breaks "one Draft Action per turn" and cannot be corrected.
+    gapped = game.model_copy(update={"actions": game.actions[:1] + game.actions[pick:]})
+    with pytest.raises(ValueError, match="invalid_turn"):
+        correct_action(settings, profile.catalog, gapped, pick, character_ids[-1])
 
 
 @pytest.mark.parametrize("empty,earlier", [(False, False), (True, False), (True, True)])
@@ -261,21 +289,13 @@ def test_bs010_changed_cause_reopens_and_reversal_restores_original_reason(
         id="one",
         number=1,
         assignments=assignments,
-        actions=(
-            DraftAction(
-                turn_index=first_pick_index, team_id="A", kind="pick", character_id=character_ids[0]
-            ),
-        ),
+        actions=recorded_pick(profile, first_pick_index, character_ids[0]),
     )
     other = Game(
         id="two",
         number=2,
         assignments=assignments,
-        actions=(
-            DraftAction(
-                turn_index=first_pick_index, team_id="A", kind="pick", character_id=character_ids[1]
-            ),
-        ),
+        actions=recorded_pick(profile, first_pick_index, character_ids[1]),
     )
     later = Game(id="three", number=3, assignments=assignments, actions=earlier.actions)
     reason = OverrideReason(category="earlier_entry_wrong", note="Verified original cause")
@@ -352,3 +372,93 @@ def test_bs010_correction_flags_every_duplicate_after_first_in_draft_order(
     assert tuple(a for a in corrected.actions if a.turn_index != edited_turn) == tuple(
         a for a in actions if a.turn_index != edited_turn
     )
+
+
+# Parent BS-010 / ADR-0008 (amended 2026-11-27): the current Game is the last
+# Game, voided or not. Given Game 1 Drafted and Game 2 Voided, nothing can be
+# cleared: Game 2 is voided and Game 1 is fixed only by replacement.
+def test_bs010_current_game_is_last_game_even_when_voided(profile, assignments, opening_ban_teams):
+    from nimbus.engine import clear_action, current_game
+
+    def bans(count):
+        return tuple(
+            DraftAction(turn_index=i, team_id=opening_ban_teams[i], kind="ban", character_id=None)
+            for i in range(count)
+        )
+
+    first = Game(id="one", number=1, assignments=assignments, actions=bans(2))
+    voided = Game(id="two", number=2, assignments=assignments, voided=True, actions=bans(1))
+    games = (first, voided)
+    assert current_game(games) == voided
+    assert current_game(()) is None
+    for game in games:
+        with pytest.raises(ValueError, match="cannot_clear_action"):
+            clear_action(games, game, game.actions[-1].turn_index)
+    live = voided.model_copy(update={"voided": False})
+    assert clear_action((first, live), live, 0).actions == ()
+
+
+# Parent ADR-0009: one Structural Invariant check serves live entry, correction
+# and a copied Replay draft, so the three paths cannot drift apart.
+@pytest.mark.parametrize(
+    "character,error", [("missing-character", "unknown_character"), (None, "cannot_skip_pick")]
+)
+def test_structural_invariants_reject_entry_correction_and_copy_alike(
+    profile, assignments, character_ids, first_pick_index, character, error
+):
+    from nimbus.engine import check_entry, correct_action, create_replay
+
+    settings = profile.snapshot()
+    turns = settings.draft_order.turns
+    before = tuple(
+        DraftAction(
+            turn_index=i,
+            team_id="A" if turns[i].position == "first" else "B",
+            kind=turns[i].kind,
+            character_id=None,
+        )
+        for i in range(first_pick_index)
+    )
+    team = "A" if turns[first_pick_index].position == "first" else "B"
+    pick = DraftAction(
+        turn_index=first_pick_index, team_id=team, kind="pick", character_id=character
+    )
+    game = Game(id="game", number=1, assignments=assignments, actions=before)
+    assert check_entry(settings, profile.catalog, (game,), game, pick) == error
+    recorded = game.model_copy(
+        update={"actions": before + (pick.model_copy(update={"character_id": character_ids[0]}),)}
+    )
+    with pytest.raises(ValueError, match=error):
+        correct_action(settings, profile.catalog, recorded, first_pick_index, character)
+    source = game.model_copy(update={"voided": True, "actions": before + (pick,)})
+    with pytest.raises(ValueError, match=error):
+        create_replay(settings, profile.catalog, (source,), source, "copy", "copy_draft")
+
+
+# Parent BS-015 / CONTEXT "Retired Character": past records still show it, but
+# it is not offered for new entries. A Retired Character is in the Catalog, so it
+# is structurally valid; only live entry refuses it. #11: a correction can
+# deliberately choose it, and a copied Replay draft keeps the recorded fact.
+def test_retired_character_is_refused_only_for_new_entries(profile, assignments, first_pick_index):
+    from nimbus.engine import check_entry, correct_action, create_replay
+    from nimbus.models import Character
+
+    catalog = (*profile.catalog, Character(id="retired-x", name="Retired X", retired=True))
+    settings = profile.snapshot()
+    turns = settings.draft_order.turns
+    ban = DraftAction(
+        turn_index=0,
+        team_id="A" if turns[0].position == "first" else "B",
+        kind=turns[0].kind,
+        character_id="retired-x",
+    )
+    empty = Game(id="game", number=1, assignments=assignments)
+    assert check_entry(settings, catalog, (empty,), empty, ban) == "unknown_character"
+    recorded = empty.model_copy(
+        update={"actions": (ban.model_copy(update={"character_id": None}),)}
+    )
+    corrected = correct_action(settings, catalog, recorded, 0, "retired-x")
+    assert corrected.actions[0].character_id == "retired-x"
+    source = recorded.model_copy(update={"voided": True, "actions": (ban,)})
+    replay = create_replay(settings, catalog, (source,), source, "copy", "copy_draft")
+    assert replay.actions == (ban,)
