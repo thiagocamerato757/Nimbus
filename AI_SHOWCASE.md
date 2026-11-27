@@ -310,7 +310,7 @@ The developer decided how to resolve the Claude Code review findings above and a
 - **Other.** The out-of-date "Not committed" line is corrected. The UI copies of server rules and the remaining judgement calls are in [#35](https://github.com/thiagocamerato757/Nimbus/issues/35).
 
 **Run:**
-- Time: 20:54:26Z–2026-11-27T21:06:07Z UTC, elapsed.
+- Time: 20:54:26Z–21:06:07Z UTC, elapsed.
 - Agents and usage: the Claude Code primary agent (Opus 5.5) only. Primary-agent tokens and billing are unavailable.
 - **First attempt: No.** A scripted edit dropped the `is_drafted_or_closed` import still used by the winner route. Ruff and mypy caught it before any test run, and it was restored.
 
@@ -322,3 +322,63 @@ The developer decided how to resolve the Claude Code review findings above and a
 - The new tests failed before their fixes, including the reproduced conflicting-rejection case.
 
 **Claude review:** pending. Per the developer's stopping rule, the next review covers only this round's diff. If it has no reproduced Spec finding, PR #34 is merged and anything else goes to #35.
+
+## Claude Code review of PR #34 fourth round — 2026-11-27
+
+`sail-skills:code-review` ran on this round's diff only, `c5f33d5...e799c56`: commits `d521109`, `fd1b9e2` and `e799c56` of [PR #34](https://github.com/thiagocamerato757/Nimbus/pull/34). The fix issues are [#13](https://github.com/thiagocamerato757/Nimbus/issues/13) and [#14](https://github.com/thiagocamerato757/Nimbus/issues/14). The review started at 21:06Z, after the push; there was no handoff pause between the push and the review.
+
+- **Agents and usage:**
+  - Claude Code primary agent (Opus 5.5), plus two parallel Claude reviewers.
+  - Standards reviewer: 63,631 tokens, 97s.
+  - Spec reviewer: 82,266 tokens, 227s.
+  - Total: 145,897 tokens, reviewers only, as reported by the harness. The split, primary-agent tokens and billing are unavailable.
+- **Verification:**
+  - The Spec reviewer reproduced findings 1–3, using a scratch Playwright config and a scratch pytest with temporary data.
+  - The primary agent re-read `App.tsx` `rebaseReplay`, the 1-second poll in `useLiveQuery.ts`, and `api.py` `edit_first_selection`.
+- **Claude review status: completed, changes requested.**
+- **Stopping rule:** there are reproduced Spec findings, so PR #34 was **not** merged.
+- **Spec findings:**
+  1. **Stale Replay panel (reproduced).** It usually shows no changes. Its baseline is the current render's Series, which the 1-second poll has already updated. The committed journey passes only because it clicks within about a second, so it is timing-dependent.
+  2. **Timeline First Selection form (reproduced).** It still shows the old choice after the holder changes, but the save stores no choice. The analyst can't record "B chose side" in one save.
+  3. **Choice saved with no holder (reproduced).** It is accepted, then cleared when a holder is first added.
+  4. Read only: the spec says "one engine gate", but `replay_block` repeats the ended check.
+  5. Read only: no engine test pins the `series_full` position in the gate order.
+- **Standards findings:**
+  - Hard: the fourth-round record lacks issue links (#13/#14), commit evidence and the pause/handoff note; this section supplies them. The time formats are also mixed.
+  - Judgement calls:
+    - `replay_block` duplicates the ended check, and `next_game_block` computes the gate twice.
+    - `GATE_MESSAGES` also holds a copy rule.
+    - The `replay_unavailable` text differs between the API and `i18n.ts`, and the i18n text uses the non-glossary word "attempt".
+    - The holder/choice rule lives in the route.
+    - `save()` grew a fifth positional parameter.
+- **Fixes:** none applied; awaiting the developer.
+
+## PR #34 fifth round — 2026-11-27
+
+[PR #34](https://github.com/thiagocamerato757/Nimbus/pull/34). The fix issues are [#13](https://github.com/thiagocamerato757/Nimbus/issues/13) and [#14](https://github.com/thiagocamerato757/Nimbus/issues/14). Remaining smells are in [#35](https://github.com/thiagocamerato757/Nimbus/issues/35).
+
+**Pause and handoff:** the fourth-round review ended at about 21:10Z. The developer's decisions arrived, and this round started at 21:14:16Z. No agent ran in between.
+
+**Developer decisions applied:**
+- **Finding 3, option A.** A choice always belongs to a holder. `record_first_selection` is one engine rule used by Start Game, Replay and timeline edits, and a choice without a holder is rejected everywhere with `choice_without_holder`.
+- **Finding 2.** The UI disables the choice until a holder is selected and clears it when the holder changes.
+- **Finding 1.** The stale Replay setup compares against its own baseline, the Series as it was when the setup opened or last rebased. Its journey waits until the live refresh shows the other edit.
+- **Gate.** `replay_block` reuses the ordered next-Game gate, the Series outcome is computed once, and an engine test pins `series_full` last.
+- **Text.** The `replay_unavailable` text uses glossary terms in both the API and the UI.
+
+**Run:**
+- Time: 21:14:16Z–21:26:13Z UTC, elapsed.
+- Agents and usage: the Claude Code primary agent (Opus 5.5) only. Primary-agent tokens and billing are unavailable.
+- **First attempt: No.** My new stale-panel assertion expected the generic stale-edit error. The successful preview reload clears that error, and the panel's change notice replaces it, so the assertion now checks the notice.
+- **Planned test change:** the First Selection journey no longer selects a choice after clearing the holder, because that field is now disabled.
+
+**Validation:**
+- `uv run --frozen pytest -q tests`: 290 passed.
+- `npx playwright test`: 20 passed.
+- `ruff check` and `ruff format --check`, `mypy`, `git diff --check` and `npm run build`: passed.
+- Mutation check: with the screen's Series as the baseline, the stale-panel journey fails.
+- The new tests failed first.
+
+**Evidence:** this round's commits on `feat/issues-11-14`.
+
+**Claude review:** pending; it covers this round's diff only, under the same stopping rule.
