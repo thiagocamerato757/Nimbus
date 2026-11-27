@@ -133,3 +133,130 @@ Resumed implementation measurement: **2026-11-27T15:22:25Z–2026-11-27T19:26:57
 Primary task counter delta from the last provider snapshot before the resumed interval: **14,300,322 input + 43,593 output = 14,343,915 total**, including **14,192,896 cached input** already counted in input. The baseline excludes the earlier implementation and interview. Primary + the three fresh follow-up worker deltas total **24,590,788 input + 110,588 output = 24,701,376 total tokens**, including **24,226,560 cached input** already included in input. Each cumulative provider counter contributes one end-minus-baseline delta; worker baseline is zero, no overlapping snapshots are summed. Auxiliary provider guardians are excluded, so this is measured agent effort rather than all provider effort. Billing charges/credits spent are unavailable; a reported zero credit balance is not a cost measurement. [Exact counters, cutoff/source paths and provider limits](docs/evidence/issues-11-14-followup-usage.json).
 
 The #13 worker's verification succeeded but its closeout failed on provider limit; primary completed commit/evidence. This handoff and its measurement scope are recorded above. Existing developer changes to AGENTS.md and earlier AI_SHOWCASE sections were preserved outside the task commits.
+
+## Claude Code review of PR #34 — 2026-11-27
+
+`sail-skills:code-review` ran in Claude Code against `origin/dev...e0eb1b7` (merge base `36a27a1`, 9 commits, 47 files). The Standards and Spec reviewers ran in parallel. Spec sources were #2 (BS-010, BS-011, BS-012) and tickets #11–#14. Claude review status: **completed, with changes requested**.
+
+- Agents: a Claude Code primary agent and two parallel Claude reviewer subagents, Standards and Spec.
+- First attempt: **No**.
+  - The first try started at 19:30:29Z on Sonnet 5.5 and also began a full local check run.
+  - The developer stopped it, switched to Opus 5.5 and invoked the review again at 19:32:23Z.
+  - The first try produced no results. Its usage counters are unavailable.
+- Time: 19:32:23Z–19:39:16Z UTC, **6m 53s** elapsed, including tool waits. The interrupted first try (19:30:29Z–about 19:32Z) is excluded.
+- Usage, reviewers only, reported by the harness:
+  - Standards: 96,043 tokens, 99s.
+  - Spec: 143,743 tokens, 369s.
+  - Total: **239,786 tokens**. The input/output/cache split and the primary agent's tokens are unavailable. Billing and credits are unavailable.
+- Validation:
+  - The full test suite was not re-run, because the developer stopped that run.
+  - The Spec reviewer ran four scratch API probes against temporary databases. All four reproduced their defects.
+  - The primary agent re-read the cited code for findings 1 and 2.
+- Spec findings, worst first:
+  1. Clearing after a voided later Game leaves the earlier Game stuck in Drafting, and a new Game can then start (BS-010, BS-011). Reproduced.
+  2. A winner on a Game still in Drafting counts toward the Series score. Reproduced.
+  3. A non-Replay Game after a void takes a new number, which the spec does not settle. Reproduced.
+  4. Draft Positions cannot be edited when the draft is copied. Reproduced.
+  5. Nit: the winner prompt's "Record and start" applies a holder prefill the analyst did not see.
+- Standards findings: no hard breaches.
+  - One undocumented revision exemption for `/replay-preview` in `workspace.py`.
+  - Judgement-call smells: duplicated Lineup and structural checks, primitive and data-clump parameters, and a `RosterTeam` term that is missing from the glossary.
+- Fixes: none applied; the review only reports.
+
+## PR #34 review fixes — 2026-11-27
+
+The developer decided how to resolve the Claude Code review findings above and asked for test-first fixes in this order:
+
+1. One definition of "current Game".
+2. Winner only on Drafted or Closed Games.
+3. Numbering after a void.
+4. A specific error for a copied draft with changed Draft Positions.
+5. A display-only First Selection pre-fill.
+6. Merged Structural Invariant checks.
+
+- **Agents:** a Claude Code primary agent (Opus 5.5) with no subagents.
+- **Time:** 19:41:52Z–2026-11-27T20:07:19Z UTC, elapsed, including test and tool waits.
+- **Usage:** primary-agent token counters are unavailable in this session, and no subagent ran. Billing and credits are unavailable.
+- **First attempt: No.**
+  - One new API test corrected a pick to "skipped", which is structurally invalid. It was fixed to use another Character.
+  - A scripted test edit spliced at stale offsets; the two seams were repaired by hand and checked in the diff.
+- **Planned test changes.** Seven pre-existing Python tests and one browser journey encoded behavior the developer reversed: a winner on an incomplete Game, an ordinary Game after a void, a generic `invalid_turn` for a copied draft with changed positions, and the server applying the pre-fill. They were updated to the decided rules.
+  - The Azir HTTP example was rebuilt with completed Games 1 and 2, because the old "voided Games 1 and 2 → Game 3" sequence is no longer possible.
+- **Retired Characters.** The merged check keeps Retired Characters structurally valid, as ADR 0009 and #11 require ("a correction can deliberately choose a Retired Character"). Only live entry refuses them, and a test pins the difference.
+- **Pre-fill.** The server never applies one; an omitted holder records none, so the field was not made required.
+- **Validation:**
+  - Python: 269 tests passed, 248 before plus 21 new runs counting parametrized cases. Both engine profiles were covered.
+  - Browser: 16 Playwright journeys passed (15 before plus 1 new). The three changed or new journeys failed against the previous `App.tsx` and passed with the fix.
+  - Static checks: Ruff lint and format, strict mypy, whitespace, and the frontend build passed.
+- **Docs and tracker:**
+  - ADR 0008 and ADR 0034 have dated amendments.
+  - Design notes and `docs/first-selection.md` are updated.
+  - #2 and #13 bodies have dated decision sections.
+  - The remaining smells are listed in [#35](https://github.com/thiagocamerato757/Nimbus/issues/35).
+- **Not committed.** The changes remain uncommitted for the developer's review.
+- **Claude Code review:** run `sail-skills:code-review` again against `dev` before merging PR #34.
+
+## PR #34 second round and Claude review — 2026-11-27
+
+**Developer decisions applied:**
+- Clearing a winner is allowed in any status. Only setting one is restricted to Drafted or Closed Games.
+- Only the current Game can be voided (`void_not_current`), recorded as an ADR 0034 amendment.
+- Copied Replay drafts accept Retired Characters, following the correction rule. The omitted holder means "none", as decided.
+- The MVP spec moved from issue #2 to `docs/spec/mvp.md`. #2 now holds a short summary and a link.
+
+**Fix run (20:10:00Z–20:16:17Z UTC, elapsed):**
+- First attempt: **Yes**. The new tests failed first as intended and passed after the change.
+- Python: 272 tests passed.
+- Browser: 17 Playwright journeys passed, 1 new, for clearing a stored winner.
+- Static checks: Ruff, strict mypy, whitespace and the build passed.
+- Agents and usage: the Claude Code primary agent (Opus 5.5) only. Primary-agent tokens and billing are unavailable.
+
+**Review run (`sail-skills:code-review` against `dev`, 20:16:17Z–20:22:03Z UTC, elapsed):**
+- Scope:
+  - The working tree against merge base `36a27a1`, so the uncommitted fixes are included.
+  - `AGENTS.md` and `AI_SHOWCASE.md` are excluded, and the untracked `docs/spec/mvp.md` is included.
+- Agents and usage:
+  - Standards reviewer: 67,735 tokens.
+  - Spec reviewer: 131,721 tokens.
+  - Total: 199,456 tokens, reviewers only, as reported by the harness. The split and billing are unavailable.
+- Status: **changes requested**. The primary agent checked the ADR 0010 conflict, the weakened test and the missing gate in the code.
+- Spec findings:
+  1. A Replay is created after the Series has ended, with no `series_ended` gate (reproduced). This is a spec gap, so the developer decides.
+  2. The BS-011 API test "voiding creates no locks in later Games" now checks only the same-number Replay, so it passes either way (reproduced). The primary agent weakened it in the second round.
+  3. The stored-winner note shows on Voided Games with the wrong reason.
+  4. Live entry on a Voided current Game returns "draft complete".
+- Standards findings:
+  - Hard: ADR 0010 still says the next Game may follow a Voided one, with no amendment.
+  - Judgement:
+    - ADR 0034 line 13 is not marked as replaced.
+    - "Current Game" is missing from CONTEXT.md.
+    - Smells: repeated "Drafted or Closed" test; contiguity check outside `structural_error`; inline message switch; `void_game` return value unused; nested ternary in `App.tsx`.
+- Fixes: none applied yet; awaiting developer decisions.
+
+## PR #34 third round — 2026-11-27
+
+**Developer decisions applied:**
+- A Replay follows the same `series_ended` gate as an ordinary next Game, tested in both directions.
+- BS-011 lock coverage is restored at the API and browser level.
+- ADR 0010 and ADR 0034 are amended.
+- The Voided-Game stored-winner note is corrected, and live entry on a Voided Game returns `game_voided`.
+- "Drafted or Closed" is one function (`is_drafted_or_closed`), and the one-action-per-turn invariant is folded into `structural_error`.
+- "Current Game" is added to `CONTEXT.md`.
+- The remaining smells are added to #35.
+
+**Run:**
+- Time: 20:25:13Z–2026-11-27T20:40:26Z UTC, elapsed, including test waits.
+- Agents and usage: the Claude Code primary agent (Opus 5.5) only. Primary-agent tokens and billing are unavailable.
+- **First attempt: No.**
+  - One new browser journey used a Series Format the profile does not allow (Fixed-length 3).
+  - The same journey did not open the collapsed current Game before clicking Void.
+  - Both were fixed in the journey; no product code changed.
+- **Planned test changes:** two existing correction engine tests built drafts with gaps, which the folded one-action-per-turn invariant now rejects. They now record skipped bans before the pick, as live entry does, and one now asserts that a gap is rejected.
+
+**Validation:**
+- Python: 277 tests passed.
+- Browser: 19 Playwright journeys passed.
+- Static checks: Ruff, strict mypy, whitespace and the build passed.
+- Mutation checks:
+  - The restored BS-011 API test fails when voided Games lock later Games.
+  - The Replay-gate journey fails without its UI guard.
