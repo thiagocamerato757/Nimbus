@@ -1,0 +1,228 @@
+{
+  "started_utc": "2026-11-27T15:22:25Z",
+  "snapshot_utc": "2026-11-27T19:26:57.817066+00:00",
+  "elapsed_seconds": 14672.817066,
+  "measurements": [
+    {
+      "role": "primary",
+      "source": "/home/cameratothiago/.codex/sessions/2026/11/27/rollout-2026-11-27T11-23-19-01a21d63-a47c-7952-a990-f8326beff8c9.jsonl",
+      "baseline_utc": "2026-11-27T15:21:36.358Z",
+      "baseline": {
+        "input_tokens": 10646711,
+        "cached_input_tokens": 10338432,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 38533,
+        "reasoning_output_tokens": 10553,
+        "total_tokens": 10685244
+      },
+      "end_counter_utc": "2026-11-27T19:26:29.211Z",
+      "end_counters": {
+        "input_tokens": 24947033,
+        "cached_input_tokens": 24531328,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 82126,
+        "reasoning_output_tokens": 32167,
+        "total_tokens": 25029159
+      },
+      "delta": {
+        "input_tokens": 14300322,
+        "cached_input_tokens": 14192896,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 43593,
+        "reasoning_output_tokens": 21614,
+        "total_tokens": 14343915
+      },
+      "provider_limits": {
+        "limit_id": "codex",
+        "limit_name": null,
+        "primary": {
+          "used_percent": 27.0,
+          "window_minutes": 300,
+          "resets_at": 1795824340
+        },
+        "secondary": {
+          "used_percent": 44.0,
+          "window_minutes": 10080,
+          "resets_at": 1796332634
+        },
+        "credits": {
+          "has_credits": false,
+          "unlimited": false,
+          "balance": "0"
+        },
+        "individual_limit": null,
+        "spend_control_reached": null,
+        "plan_type": "plus",
+        "rate_limit_reached_type": null
+      }
+    },
+    {
+      "role": "/root/issue11_complete",
+      "source": "/home/cameratothiago/.codex/sessions/2026/11/27/rollout-2026-11-27T12-24-43-01a21d9b-dcfd-7c51-84a7-1ff28a20bca6.jsonl",
+      "baseline_utc": "fresh-session zero",
+      "baseline": {
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 0,
+        "reasoning_output_tokens": 0,
+        "total_tokens": 0
+      },
+      "end_counter_utc": "2026-11-27T15:32:02.313Z",
+      "end_counters": {
+        "input_tokens": 1789911,
+        "cached_input_tokens": 1734144,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 14059,
+        "reasoning_output_tokens": 3362,
+        "total_tokens": 1803970
+      },
+      "delta": {
+        "input_tokens": 1789911,
+        "cached_input_tokens": 1734144,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 14059,
+        "reasoning_output_tokens": 3362,
+        "total_tokens": 1803970
+      },
+      "provider_limits": {
+        "limit_id": "codex",
+        "limit_name": null,
+        "primary": {
+          "used_percent": 86.0,
+          "window_minutes": 300,
+          "resets_at": 1795806270
+        },
+        "secondary": {
+          "used_percent": 37.0,
+          "window_minutes": 10080,
+          "resets_at": 1796332634
+        },
+        "credits": {
+          "has_credits": false,
+          "unlimited": false,
+          "balance": "0"
+        },
+        "individual_limit": null,
+        "spend_control_reached": null,
+        "plan_type": "plus",
+        "rate_limit_reached_type": null
+      }
+    },
+    {
+      "role": "/root/issue13_complete",
+      "source": "/home/cameratothiago/.codex/sessions/2026/11/27/rollout-2026-11-27T12-33-21-01a21da3-c475-7542-b8de-fa0d5d0dd8a6.jsonl",
+      "baseline_utc": "fresh-session zero",
+      "baseline": {
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 0,
+        "reasoning_output_tokens": 0,
+        "total_tokens": 0
+      },
+      "end_counter_utc": "2026-11-27T15:44:43.698Z",
+      "end_counters": {
+        "input_tokens": 2805879,
+        "cached_input_tokens": 2736640,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 22885,
+        "reasoning_output_tokens": 3813,
+        "total_tokens": 2828764
+      },
+      "delta": {
+        "input_tokens": 2805879,
+        "cached_input_tokens": 2736640,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 22885,
+        "reasoning_output_tokens": 3813,
+        "total_tokens": 2828764
+      },
+      "provider_limits": {
+        "limit_id": "premium",
+        "limit_name": null,
+        "primary": null,
+        "secondary": null,
+        "credits": {
+          "has_credits": false,
+          "unlimited": false,
+          "balance": "0"
+        },
+        "individual_limit": null,
+        "spend_control_reached": null,
+        "plan_type": "plus",
+        "rate_limit_reached_type": null
+      }
+    },
+    {
+      "role": "/root/issue14_complete",
+      "source": "/home/cameratothiago/.codex/sessions/2026/11/27/rollout-2026-11-27T16-08-25-01a21e68-aaf2-7840-8223-d967b5d1b43f.jsonl",
+      "baseline_utc": "fresh-session zero",
+      "baseline": {
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 0,
+        "reasoning_output_tokens": 0,
+        "total_tokens": 0
+      },
+      "end_counter_utc": "2026-11-27T19:24:02.038Z",
+      "end_counters": {
+        "input_tokens": 5694676,
+        "cached_input_tokens": 5562880,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 30051,
+        "reasoning_output_tokens": 6735,
+        "total_tokens": 5724727
+      },
+      "delta": {
+        "input_tokens": 5694676,
+        "cached_input_tokens": 5562880,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 30051,
+        "reasoning_output_tokens": 6735,
+        "total_tokens": 5724727
+      },
+      "provider_limits": {
+        "limit_id": "codex",
+        "limit_name": null,
+        "primary": {
+          "used_percent": 25.0,
+          "window_minutes": 300,
+          "resets_at": 1795824340
+        },
+        "secondary": {
+          "used_percent": 44.0,
+          "window_minutes": 10080,
+          "resets_at": 1796332634
+        },
+        "credits": {
+          "has_credits": false,
+          "unlimited": false,
+          "balance": "0"
+        },
+        "individual_limit": null,
+        "spend_control_reached": null,
+        "plan_type": "plus",
+        "rate_limit_reached_type": null
+      }
+    }
+  ],
+  "aggregate": {
+    "input_tokens": 24590788,
+    "output_tokens": 110588,
+    "cached_input_tokens": 24226560,
+    "total_tokens": 24701376
+  },
+  "scope": "Primary delta from last counter before resumed interval; each fresh worker zero-to-final counter once. Cached input included in input. Interview and previous implementation excluded; auxiliary guardians excluded. Billing unavailable. Snapshot excludes later responses and closeout operations.",
+  "status": "Implementation complete; issues #11/#12/#13/#14 closed with individual PASS evidence",
+  "pr": "https://github.com/thiagocamerato757/Nimbus/pull/34",
+  "observed_gap": {
+    "from_utc": "2026-11-27T15:44:43.268452+00:00",
+    "to_utc": "2026-11-27T19:05:53+00:00",
+    "seconds": 12069.731548,
+    "scope": "No recorded commands between last worker check and resumed primary UTC read; provider-limit/continuation wait included, exact stop instant unavailable. Not active execution."
+  },
+  "elapsed_seconds_outside_observed_gap": 2603.085518,
+  "claude_review": "pending before merge"
+}

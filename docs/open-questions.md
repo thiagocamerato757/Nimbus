@@ -41,7 +41,7 @@
 - Confirm the built-in live Source cannot be removed as a whole
 - Available Now when a profile allows the same Character twice in a Game
 - The turn budget the milestone 3 latency prototype measures against
-- Verify First Selection default against league rulebooks (unconfirmed)
+- [x] First Selection default (#14): official Riot NACL26.6 verifies a league-specific previous-loser policy; generic LoL uses neutral `none`, with configurable editable policies and no universal league claim. See [source investigation](first-selection.md).
 - README "Getting started" commands once code exists
 - AGENTS.md has no architecture or agent rules yet, although AI_SHOWCASE.md says it does
 
