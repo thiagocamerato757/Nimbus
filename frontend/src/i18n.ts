@@ -1,5 +1,11 @@
 // All interface copy is keyed here; profile and user-entered names are data.
 const en = {
+  skippedBan: 'Skipped Ban', skipBan: 'Skip ban',
+  overrideReason: 'Override reason', overrideNote: 'Override note', recordOverride: 'Record with Override',
+  official_ruling: 'Official ruling', profile_mismatch: 'Profile mismatch', earlier_entry_wrong: 'Earlier entry was wrong', other: 'Other',
+  acknowledgedViolation: 'Acknowledged Violation', openViolation: 'Open Violation',
+  profileUpdateHint: 'Repeated Profile mismatch Overrides: update the Title profile for this rule.',
+  duplicate_character: 'This Character already appears in this Game.', cannot_skip_pick: 'A pick turn cannot be skipped.',
   brand: 'Nimbus', workspace: 'Draft workspace', subtitle: 'The next pick starts here.',
   createBackup: 'Back up Workspace',
   backupCreated: 'Verified backup saved in your data folder’s backups directory: {name}',

@@ -51,7 +51,7 @@ class Store:
         with self.connection() as connection:
             connection.execute("PRAGMA journal_mode=WAL")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version in (1, 2):
+            if version in (1, 2, 3):
                 self.create_backup("migration")
             if version == 0:
                 migration = Path(__file__).with_name("migrations") / "001_initial.sql"
@@ -69,7 +69,15 @@ class Store:
                     connection.executescript("BEGIN;\n" + migration.read_text() + "\nCOMMIT;")
                 else:
                     connection.execute("PRAGMA user_version = 3")
-            elif version != 3:
+                version = 3
+            if version == 3:
+                migration = Path(__file__).with_name("migrations") / "004_rule_entry.sql"
+                columns = {row[1] for row in connection.execute("PRAGMA table_info(games)")}
+                if "acknowledgements" not in columns:
+                    connection.executescript("BEGIN;\n" + migration.read_text() + "\nCOMMIT;")
+                else:
+                    connection.execute("PRAGMA user_version = 4")
+            elif version != 4:
                 raise RuntimeError(f"Unsupported Nimbus database schema: {version}")
 
     @contextmanager
@@ -117,6 +125,7 @@ class Store:
                         number=game["number"],
                         assignments=json.loads(game["assignments"]),
                         actions=tuple(DraftAction.model_validate(a) for a in actions),
+                        acknowledgements=json.loads(game["acknowledgements"]),
                     )
                 )
             return Series(
@@ -158,11 +167,16 @@ class Store:
                 ),
             )
 
-    def add_action(self, game_id: str, action: DraftAction) -> None:
+    def add_action(self, game_id: str, action: DraftAction, game: Game) -> None:
         with self.connection() as connection:
             connection.execute(
                 "INSERT INTO draft_actions VALUES (?, ?, ?, ?, ?)",
                 (game_id, action.turn_index, action.team_id, action.kind, action.character_id),
+            )
+
+            connection.execute(
+                "UPDATE games SET acknowledgements = ? WHERE id = ?",
+                (json.dumps([a.model_dump() for a in game.acknowledgements]), game_id),
             )
 
     def begin_request(self, writing: bool) -> sqlite3.Connection:

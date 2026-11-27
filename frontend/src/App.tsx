@@ -32,6 +32,9 @@ export default function App() {
   const [firstPick, setFirstPick] = useState<TeamId>('A');
   const [character, setCharacter] = useState('');
   const [search, setSearch] = useState('');
+  const [rejectedRule, setRejectedRule] = useState('');
+  const [overrideCategory, setOverrideCategory] = useState('official_ruling');
+  const [overrideNote, setOverrideNote] = useState('');
   const profile = profiles.find(p => p.id === (series?.profile_id ?? profileId));
   const current = series?.games.at(-1);
   const nextTurn = current?.state.next_turn;
@@ -58,16 +61,17 @@ export default function App() {
   useEffect(() => { void load(); }, []);
 
   async function save(path: string, body?: unknown) {
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setRejectedRule('');
     try {
       const result = await requestSnapshot<Series>(path, body, editVersion ?? version);
       const updated = result.data;
-      setCharacter(''); setSearch('');
+      setCharacter(''); setSearch(''); setOverrideNote('');
       workspace.accept({ data: [updated, ...seriesList.filter(item => item.id !== updated.id)], version: result.version });
       setSelectedId(updated.id); setEditVersion(null);
       void workspace.refresh();
     } catch (e) {
       setError(errorText(e instanceof ApiError ? e.code : 'unexpected'));
+      if (e instanceof ApiError && ['fearless_lock', 'wasted_ban', 'duplicate_character'].includes(e.code)) setRejectedRule(e.code);
       if (e instanceof ApiError && e.code === 'stale_version') {
         setCharacter(''); setEditVersion(null);
         await workspace.refresh();
@@ -102,7 +106,7 @@ export default function App() {
   function actionList(game: Game, teamId: TeamId, kind: 'ban' | 'pick') {
     const actions = game.actions.filter(action => action.team_id === teamId && action.kind === kind);
     return actions.length ? <ol className={`entries ${kind}`}>
-      {actions.map(action => <li key={action.turn_index}>{characterName(action.character_id)}</li>)}
+      {actions.map(action => <li key={action.turn_index}>{action.character_id === null ? t('skippedBan') : characterName(action.character_id)}</li>)}
     </ol> : <p className="empty">{t('noActions')}</p>;
   }
 
@@ -110,7 +114,7 @@ export default function App() {
     <aside className="sidebar">
       <a className="brand" href="/" aria-label={t('brand')}><span className="brand-mark" aria-hidden="true">N</span>{t('brand')}</a>
       <p className="sidebar-caption">{t('workspace')}</p>
-      <button className="new-series" onClick={() => { setSelectedId(null); setError(''); setEditVersion(null); setCharacter(''); }} disabled={busy}>{t('newSeries')}</button>
+      <button className="new-series" onClick={() => { setSelectedId(null); setError(''); setEditVersion(null); setCharacter(''); setRejectedRule(''); }} disabled={busy}>{t('newSeries')}</button>
       <h2 className="eyebrow">{t('yourSeries')}</h2>
       <nav className="series-nav">
         {seriesList.map(item => <button key={item.id} className={series?.id === item.id ? 'selected' : ''}
@@ -178,15 +182,35 @@ export default function App() {
               {t('progress', { filled: current.actions.length, total: series.rule_snapshot.draft_order.turns.length })}</span></div>
             {nextTurn ? <><h2 data-testid="next-turn">{t('turn', { number: nextTurn.index + 1, team: teamName(nextTurn.team_id), kind: t(nextTurn.kind) })}</h2>
               <form className="entry-form" onSubmit={record}>
-                <label>{t('search')}<input disabled={busy} value={search} placeholder={t('searchHint')} onChange={e => { setSearch(e.target.value); setCharacter(''); }} /></label>
-                <label>{t('character')}<select disabled={busy} value={character} onChange={e => { setCharacter(e.target.value); setEditVersion(version); }} required>
+                <label>{t('search')}<input disabled={busy} value={search} placeholder={t('searchHint')} onChange={e => { setSearch(e.target.value); setCharacter(''); setRejectedRule(''); }} /></label>
+                <label>{t('character')}<select disabled={busy} value={character} onChange={e => { setCharacter(e.target.value); setRejectedRule(''); setEditVersion(version); }} required>
                   <option value="">{t('select')}</option>
                   {profile?.catalog.filter(c => !c.retired && [c.name, ...c.aliases].some(name => name.toLowerCase().includes(search.toLowerCase())))
                     .map(c => <option key={c.id} value={c.id}>{current.state.locks[nextTurn.team_id].includes(c.id) ? t('lockedOption', { name: c.name }) : c.name}</option>)}
                 </select></label>
                 <button className="primary" disabled={busy || !character}>{busy ? t('saving') : t('record')}</button>
-              </form></> : <><h2>{t('complete')}</h2><p className="muted">{t('draftCompleteHint')}</p></>}
+              </form>
+              {nextTurn.kind === 'ban' && <button disabled={busy} onClick={() => void save(`/series/${series.id}/games/${current.id}/actions`, { character_id: null })}>{t('skipBan')}</button>}
+              {rejectedRule && character && <form onSubmit={event => {
+                event.preventDefault();
+                void save(`/series/${series.id}/games/${current.id}/actions`, { character_id: character, override: { category: overrideCategory, note: overrideNote || null } });
+              }}>
+                <label>{t('overrideReason')}<select value={overrideCategory} onChange={e => setOverrideCategory(e.target.value)}>
+                  {(['official_ruling', 'profile_mismatch', 'earlier_entry_wrong', 'other'] as const).map(category => <option key={category} value={category}>{t(category)}</option>)}
+                </select></label>
+                <label>{t('overrideNote')}<input value={overrideNote} maxLength={2000} required={overrideCategory === 'other'} onChange={e => setOverrideNote(e.target.value)} /></label>
+                <button disabled={busy || (overrideCategory === 'other' && !overrideNote.trim())}>{t('recordOverride')}</button>
+              </form>}
+              </> : <><h2>{t('complete')}</h2><p className="muted">{t('draftCompleteHint')}</p></>}
           </section>
+          <div data-testid="rule-notices" role="status">
+            {current.state.notices.map(notice => <p key={`notice-${notice.turn_index}`}>{errorText(notice.rule)}</p>)}
+            {current.state.violations.map(violation => <p key={`${violation.turn_index}-${violation.rule}`}>
+              {t(violation.status === 'acknowledged' ? 'acknowledgedViolation' : 'openViolation')} · {errorText(violation.rule)}
+              {violation.reason && <> · {t(violation.reason.category)}{violation.reason.note && <> · {violation.reason.note}</>}</>}
+            </p>)}
+          </div>
+          {!!current.state.profile_update_hints.length && <p data-testid="profile-update-hint">{t('profileUpdateHint')}</p>}
           <div className="team-grid">{series.teams.map(team => {
             const assignment = current.assignments.find(a => a.team_id === team.id)!;
             return <section className={`team-panel panel team-${team.id}`} key={team.id}>

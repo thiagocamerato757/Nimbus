@@ -7,7 +7,7 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from nimbus.engine import derive_state, validate_action
+from nimbus.engine import derive_state, record_entry
 from nimbus.local_access import LocalAccess
 from nimbus.models import (
     Assignment,
@@ -15,6 +15,7 @@ from nimbus.models import (
     Fearless,
     Game,
     GameView,
+    OverrideReason,
     Series,
     SeriesFormat,
     SeriesView,
@@ -49,7 +50,8 @@ class StartGame(Request):
 
 
 class EnterAction(Request):
-    character_id: str
+    character_id: str | None
+    override: OverrideReason | None = None
 
 
 def reject(code: str, message: str, status: int = 409) -> HTTPException:
@@ -70,7 +72,10 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
         references: dict[str, set[str]] = {}
         for stored_series in store.list_series():
             references.setdefault(stored_series.profile_id, set()).update(
-                action.character_id for game in stored_series.games for action in game.actions
+                action.character_id
+                for game in stored_series.games
+                for action in game.actions
+                if action.character_id is not None
             )
         loaded_profiles = load_profiles(profile_dir, references)
     except ProfileLoadError as error:
@@ -208,23 +213,31 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
         turn = state.next_turn
         if turn is None:
             raise reject("draft_complete", "This draft is already complete.")
-        character = next((c for c in profile.catalog if c.id == request.character_id), None)
-        if character is None or character.retired:
-            raise reject(
-                "unknown_character", "Choose an active Character from the Character Catalog.", 422
-            )
         action = DraftAction(
-            turn_index=turn.index, team_id=turn.team_id, kind=turn.kind, character_id=character.id
+            turn_index=turn.index,
+            team_id=turn.team_id,
+            kind=turn.kind,
+            character_id=request.character_id,
         )
-        reason = validate_action(series.rule_snapshot, profile.catalog, series.games, game, action)
-        if reason == "wasted_ban":
-            raise reject(
-                reason,
-                "Wasted ban: the opposing Team cannot pick this Character due to a Fearless Lock.",
+        try:
+            recorded = record_entry(
+                series.rule_snapshot, profile.catalog, series.games, game, action, request.override
             )
-        if reason:
-            raise reject(reason, "Fearless Lock: this Character was picked in an earlier Game.")
-        store.add_action(game.id, action)
+        except ValueError as error:
+            code = str(error)
+            messages = {
+                "unknown_character": "Choose an active Character from the Character Catalog.",
+                "cannot_skip_pick": "A pick turn cannot be skipped.",
+                "duplicate_character": "This Character already appears in this Game.",
+                "fearless_lock": "Fearless Lock: this Character was picked in an earlier Game.",
+                "wasted_ban": "Wasted ban: the opposing Team cannot pick this Character due to a Fearless Lock.",
+            }
+            raise reject(
+                code,
+                messages.get(code, "This Draft Action cannot fill this turn."),
+                422 if code == "unknown_character" else 409,
+            ) from error
+        store.add_action(game.id, action, recorded)
         return view(read(identifier))
 
     return app

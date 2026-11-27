@@ -26,8 +26,8 @@ test('starting Game 2 shows Game 1 picks locked for both Teams', async ({ page }
   await expect(page.getByTestId('timeline')).toContainText('Orianna');
   // BS-009, additionally exercised in the UI: locked options remain selectable
   // so an attempted pick receives the actual engine rejection and its reason.
-  for (let i = 0; i < 6; i++) {
-    await page.getByLabel('Character to record').selectOption('Garen');
+  for (const [i, character] of ['Garen', 'Gragas', 'Gwen', 'Hecarim', 'Heimerdinger', 'Hwei'].entries()) {
+    await page.getByLabel('Character to record').selectOption(character);
     await page.getByRole('button', { name: 'Record entry' }).click();
     await expect(page.getByTestId('draft-progress')).toHaveText(`${i + 1} / 20 turns`);
   }

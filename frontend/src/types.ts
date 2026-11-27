@@ -12,8 +12,11 @@ export interface Turn { position: 'first' | 'second'; kind: Kind }
 export interface Game {
   id: string; number: number; patch: string | null;
   assignments: { team_id: TeamId; side: string; position: 'first' | 'second' }[];
-  actions: { turn_index: number; team_id: TeamId; kind: Kind; character_id: string }[];
+  actions: { turn_index: number; team_id: TeamId; kind: Kind; character_id: string | null }[];
   state: { locks: Record<TeamId, string[]>; available: Record<TeamId, string[]>;
+    notices: { turn_index: number; rule: string }[];
+    violations: { turn_index: number; rule: string; status: 'open' | 'acknowledged'; reason: { category: 'official_ruling' | 'profile_mismatch' | 'earlier_entry_wrong' | 'other'; note: string | null } | null }[];
+    profile_update_hints: string[];
     complete: boolean; next_turn: { index: number; team_id: TeamId; kind: Kind } | null };
 }
 export interface Series {

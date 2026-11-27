@@ -86,11 +86,41 @@ class Assignment(Value):
     position: Position
 
 
+class OverrideReason(Value):
+    category: Literal["official_ruling", "profile_mismatch", "earlier_entry_wrong", "other"]
+    note: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def require_other_note(self) -> "OverrideReason":
+        if self.category == "other" and not (self.note or "").strip():
+            raise ValueError("Other requires a note")
+        return self
+
+
+class Acknowledgement(Value):
+    turn_index: int
+    rule: str
+    fingerprint: str
+    reason: OverrideReason
+
+
+class Violation(Value):
+    turn_index: int
+    rule: str
+    status: Literal["open", "acknowledged"]
+    reason: OverrideReason | None = None
+
+
+class Notice(Value):
+    turn_index: int
+    rule: str
+
+
 class DraftAction(Value):
     turn_index: int
     team_id: TeamId
     kind: ActionKind
-    character_id: str
+    character_id: str | None
 
 
 class Game(Value):
@@ -99,6 +129,7 @@ class Game(Value):
     number: int
     assignments: tuple[Assignment, ...]
     actions: tuple[DraftAction, ...] = ()
+    acknowledgements: tuple[Acknowledgement, ...] = ()
 
 
 class Series(Value):
@@ -123,6 +154,9 @@ class DraftState(Value):
     available: dict[TeamId, tuple[str, ...]]
     next_turn: NextTurn | None
     complete: bool
+    violations: tuple[Violation, ...] = ()
+    notices: tuple[Notice, ...] = ()
+    profile_update_hints: tuple[str, ...] = ()
 
 
 class GameView(Game):
