@@ -1,5 +1,12 @@
 // All interface copy is keyed here; profile and user-entered names are data.
 const en = {
+  replaySetup: 'Replay setup', replayGame: 'Replay Game {number}', createReplay: 'Create Replay',
+  replayChoice: 'Draft for the Replay', copyDraft: 'Copy the voided Game’s draft', newDraft: 'New draft',
+  replayPatch: 'Replay Patch', replaySide: 'Replay Team A Side', replayFirst: 'Replay First-pick Team',
+  replayLineup: '{team} Lineup', replayPreview: 'Replay preview', replayOf: 'Replay of voided Game {number}',
+  carriedFrom: 'carried from voided Game {number}', viewSource: 'View voided source',
+  cancelReplay: 'Cancel Replay', replay_unavailable: 'Only the latest Voided attempt can be replayed before a following Game starts.',
+  invalid_turn: 'Copied actions must match the Draft Order and Draft Positions. Choose a new draft to change Draft Positions.',
   Drafting: 'Drafting', Drafted: 'Drafted', Closed: 'Closed', Voided: 'Voided',
   winner: 'Winner', saveWinner: 'Save winner', later: 'Later', resultPending: 'Result pending',
   winnerPrompt: 'Record the previous Game’s winner', recordAndStart: 'Record winner and start',

@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 from nimbus.models import (
     Acknowledgement,
+    CarriedAcknowledgement,
     Character,
     DraftAction,
     DraftState,
@@ -269,6 +270,7 @@ def derive_state(
                     rule=rule,
                     status="acknowledged" if acknowledgement else "open",
                     reason=acknowledgement.reason if acknowledgement else None,
+                    carried_from=acknowledgement.carried_from if acknowledgement else (),
                 )
             )
         opponent: TeamId = "B" if action.team_id == "A" else "A"
@@ -359,3 +361,90 @@ def clear_action(games: Sequence[Game], game: Game, turn_index: int) -> Game:
     ):
         raise ValueError("cannot_clear_action")
     return game.model_copy(update={"actions": game.actions[:-1]})
+
+
+def create_replay(
+    settings: RuleSnapshot,
+    catalog: Sequence[Character],
+    games: Sequence[Game],
+    source: Game,
+    identifier: str,
+    choice: str,
+    prefill: Game | None = None,
+) -> Game:
+    """Create a linked attempt; copied Game Rules flag, structural failures reject."""
+    if not games or games[-1].id != source.id or not source.voided:
+        raise ValueError("replay_unavailable")
+    if choice not in {"copy_draft", "new_draft"}:
+        raise ValueError("replay_choice_required")
+    template = prefill or source
+    replay = Game(
+        id=identifier,
+        number=source.number,
+        replay_of=source.id,
+        assignments=template.assignments,
+        patch=template.patch,
+        lineups=template.lineups,
+    )
+    if choice == "new_draft":
+        return replay
+    for action in source.actions:
+        if action.turn_index >= len(settings.draft_order.turns):
+            raise ValueError("invalid_turn")
+        turn = settings.draft_order.turns[action.turn_index]
+        teams = [a.team_id for a in replay.assignments if a.position == turn.position]
+        if (
+            action.turn_index != len(replay.actions)
+            or len(teams) != 1
+            or action.team_id != teams[0]
+            or action.kind != turn.kind
+        ):
+            raise ValueError("invalid_turn")
+        if action.character_id is None and action.kind == "pick":
+            raise ValueError("cannot_skip_pick")
+        if action.character_id is not None and not any(
+            c.id == action.character_id for c in catalog
+        ):
+            raise ValueError("unknown_character")
+        original_prefix = source.model_copy(update={"actions": source.actions[: action.turn_index]})
+        mapped_prefix = original_prefix.model_copy(update={"id": replay.id})
+        acknowledgements = replay.acknowledgements
+        for rule in _rules(settings, catalog, games, replay, action):
+            original = next(
+                (
+                    a
+                    for a in source.acknowledgements
+                    if a.turn_index == action.turn_index
+                    and a.rule == rule
+                    and a.fingerprint
+                    == _fingerprint(settings, rule, games, original_prefix, action)
+                ),
+                None,
+            )
+            fingerprint = _fingerprint(settings, rule, games, replay, action)
+            if original is not None and fingerprint == _fingerprint(
+                settings, rule, games, mapped_prefix, action
+            ):
+                acknowledgements += (
+                    Acknowledgement(
+                        turn_index=action.turn_index,
+                        rule=rule,
+                        fingerprint=fingerprint,
+                        reason=original.reason,
+                        carried_from=original.carried_from
+                        + (
+                            CarriedAcknowledgement(
+                                game_id=source.id,
+                                game_number=source.number,
+                                fingerprint=original.fingerprint,
+                            ),
+                        ),
+                    ),
+                )
+        replay = replay.model_copy(
+            update={
+                "actions": replay.actions + (action,),
+                "acknowledgements": acknowledgements,
+            }
+        )
+    return replay

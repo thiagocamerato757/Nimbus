@@ -60,7 +60,7 @@ class Store:
         with self.connection() as connection:
             connection.execute("PRAGMA journal_mode=WAL")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version in (1, 2, 3, 4, 5, 6):
+            if version in (1, 2, 3, 4, 5, 6, 7):
                 self.create_backup("migration")
             if version == 0:
                 migration = Path(__file__).with_name("migrations") / "001_initial.sql"
@@ -121,7 +121,26 @@ class Store:
                     connection.executescript("BEGIN;\n" + migration.read_text() + "\nCOMMIT;")
                 else:
                     connection.execute("PRAGMA user_version = 7")
-            elif version != 7:
+                version = 7
+            if version == 7:
+                columns = {row[1] for row in connection.execute("PRAGMA table_info(games)")}
+                if "replay_of" not in columns:
+                    migration = Path(__file__).with_name("migrations") / "008_replay_attempts.sql"
+                    connection.commit()
+                    connection.execute("PRAGMA foreign_keys=OFF")
+                    try:
+                        connection.executescript("BEGIN;\n" + migration.read_text())
+                        if connection.execute("PRAGMA foreign_key_check").fetchone():
+                            raise RuntimeError("Replay migration failed foreign-key verification")
+                        connection.commit()
+                    except BaseException:
+                        connection.rollback()
+                        raise
+                    finally:
+                        connection.execute("PRAGMA foreign_keys=ON")
+                else:
+                    connection.execute("PRAGMA user_version = 8")
+            elif version != 8:
                 raise RuntimeError(f"Unsupported Nimbus database schema: {version}")
 
     @contextmanager
@@ -189,7 +208,7 @@ class Store:
             games = []
             team_ids: tuple[TeamId, ...] = ("A", "B")
             for game in connection.execute(
-                "SELECT * FROM games WHERE series_id = ? ORDER BY number", (identifier,)
+                "SELECT * FROM games WHERE series_id = ? ORDER BY attempt_order", (identifier,)
             ):
                 actions = [
                     dict(a)
@@ -225,6 +244,7 @@ class Store:
                         voided=bool(game["voided"]),
                         id=game["id"],
                         number=game["number"],
+                        replay_of=game["replay_of"],
                         assignments=json.loads(game["assignments"]),
                         actions=tuple(DraftAction.model_validate(a) for a in actions),
                         acknowledgements=json.loads(game["acknowledgements"]),
@@ -260,16 +280,21 @@ class Store:
     def add_game(self, series_id: str, game: Game) -> None:
         with self.connection() as connection:
             connection.execute(
-                "INSERT INTO games (id, series_id, number, assignments, patch) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO games (id, series_id, number, assignments, patch, replay_of, attempt_order) "
+                "VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(attempt_order), 0) + 1 FROM games WHERE series_id = ?))",
                 (
                     game.id,
                     series_id,
                     game.number,
                     json.dumps([a.model_dump() for a in game.assignments]),
                     game.patch,
+                    game.replay_of,
+                    series_id,
                 ),
             )
 
+            for action in game.actions:
+                self.add_action(game.id, action, game)
             for team_id, players in game.lineups.items():
                 self.save_lineup(game.id, team_id, players)
 

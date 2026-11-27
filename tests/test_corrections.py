@@ -289,8 +289,16 @@ def test_bs010_saved_correction_returns_later_duplicate_carriers(
     with CurrentClient(create_app(data_dir=tmp_path)) as client:
         base, actions = start(client)
         characters = [
-            "Ahri", "Akali", "Alistar", "Annie", "Ashe", "Azir", "Bard", "Braum",
-            "Caitlyn", "Camille",
+            "Ahri",
+            "Akali",
+            "Alistar",
+            "Annie",
+            "Ashe",
+            "Azir",
+            "Bard",
+            "Braum",
+            "Caitlyn",
+            "Camille",
         ]
         for character in characters:
             result = client.post(actions, json={"character_id": character})

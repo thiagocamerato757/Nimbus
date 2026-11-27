@@ -11,6 +11,7 @@ from nimbus.engine import (
     acknowledge_violation,
     clear_action,
     correct_action,
+    create_replay,
     derive_progress,
     derive_state,
     record_entry,
@@ -78,6 +79,14 @@ class StartGame(Request):
     patch: str | None = Field(default=None, max_length=100)
     team_a_side: str
     first_pick_team: TeamId
+
+
+class ReplayGame(Request):
+    draft_choice: Literal["copy_draft", "new_draft"]
+    team_a_side: str | None = None
+    first_pick_team: TeamId | None = None
+    patch: str | None = Field(default=None, max_length=100)
+    lineups: dict[TeamId, tuple[str, ...]] | None = None
 
 
 class EditWinner(Request):
@@ -321,7 +330,7 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
         )
         game = Game(
             id=uuid4().hex,
-            number=len(series.games) + 1,
+            number=max((g.number for g in series.games), default=0) + 1,
             lineups=series.games[-1].lineups if series.games else {"A": (), "B": ()},
             assignments=assignments,
             patch=request.patch if request.patch is not None else series.patch,
@@ -334,6 +343,91 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
         if game is None:
             raise reject("game_not_found", "Game not found.", 404)
         return game
+
+    def replay_candidate(identifier: str, game_id: str, request: ReplayGame) -> tuple[Series, Game]:
+        series = read(identifier)
+        source = find_game(series, game_id)
+        profile = profiles()[series.profile_id]
+        side = request.team_a_side or next(a.side for a in source.assignments if a.team_id == "A")
+        first = request.first_pick_team or next(
+            a.team_id for a in source.assignments if a.position == "first"
+        )
+        if side not in profile.sides:
+            raise reject("unknown_side", "Choose a Side from the Title profile.", 422)
+        lineups = request.lineups if request.lineups is not None else source.lineups
+        if set(lineups) != {"A", "B"}:
+            raise reject("invalid_lineup_size", "Both Team Lineups are required.", 422)
+        seen: set[str] = set()
+        for team in series.teams:
+            ids = lineups[team.id]
+            if len(ids) != len(set(ids)) or len(ids) > profile.team_size:
+                raise reject(
+                    "invalid_lineup_size",
+                    "Choose distinct Players up to the Title's team size.",
+                    422,
+                )
+            for player_id in ids:
+                player = find_player(player_id)
+                if (
+                    player.current_team_id != team.roster_id
+                    and player_id not in source.lineups[team.id]
+                ):
+                    raise reject("player_not_on_roster", "Choose Players from this Team's Roster.")
+                if player_id in seen:
+                    raise reject(
+                        "player_on_other_lineup", "A Player can play for only one Team in a Game."
+                    )
+                seen.add(player_id)
+        assignments = tuple(
+            Assignment(
+                team_id=t.id,
+                side=side if t.id == "A" else next(s for s in profile.sides if s != side),
+                position="first" if t.id == first else "second",
+            )
+            for t in series.teams
+        )
+        prefill = source.model_copy(
+            update={
+                "assignments": assignments,
+                "lineups": lineups,
+                "patch": request.patch if "patch" in request.model_fields_set else source.patch,
+            }
+        )
+        try:
+            replay = create_replay(
+                series.rule_snapshot,
+                profile.catalog,
+                series.games,
+                source,
+                uuid4().hex,
+                request.draft_choice,
+                prefill,
+            )
+        except ValueError as error:
+            raise reject(
+                str(error),
+                "Replay must preserve Structural Invariants and follow the latest Voided attempt.",
+            ) from None
+        return series, replay
+
+    @app.post("/api/series/{identifier}/games/{game_id}/replay-preview")
+    def preview_replay(identifier: str, game_id: str, request: ReplayGame) -> GameView:
+        series, replay = replay_candidate(identifier, game_id, request)
+        return GameView(
+            **replay.model_dump(),
+            state=derive_state(
+                series.rule_snapshot,
+                profiles()[series.profile_id].catalog,
+                series.games + (replay,),
+                replay,
+            ),
+        )
+
+    @app.post("/api/series/{identifier}/games/{game_id}/replay", status_code=201)
+    def replay_game(identifier: str, game_id: str, request: ReplayGame) -> SeriesView:
+        _, replay = replay_candidate(identifier, game_id, request)
+        store.add_game(identifier, replay)
+        return view(read(identifier))
 
     @app.post("/api/series/{identifier}/games/{game_id}/winner")
     def edit_winner(identifier: str, game_id: str, request: EditWinner) -> SeriesView:

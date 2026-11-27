@@ -13,6 +13,7 @@ export interface Profile { team_size: number; character_pool_label: string; id: 
 export interface Turn { position: 'first' | 'second'; kind: Kind }
 export interface DraftAction { turn_index: number; team_id: TeamId; kind: Kind; character_id: string | null }
 export interface Game {
+  replay_of: string | null;
   winner: TeamId | null; voided: boolean;
   id: string; number: number; patch: string | null;
   assignments: { team_id: TeamId; side: string; position: 'first' | 'second' }[];
@@ -23,7 +24,7 @@ export interface Game {
   state: { locks: Record<TeamId, string[]>; available: Record<TeamId, string[]>;
     status: 'Drafting' | 'Drafted' | 'Closed' | 'Voided'; result_pending: boolean; missing: string[];
     notices: { turn_index: number; rule: string }[];
-    violations: { turn_index: number; rule: string; status: 'open' | 'acknowledged'; reason: { category: 'official_ruling' | 'profile_mismatch' | 'earlier_entry_wrong' | 'other'; note: string | null } | null }[];
+    violations: { carried_from?: { game_id: string; game_number: number; fingerprint: string }[]; turn_index: number; rule: string; status: 'open' | 'acknowledged'; reason: { category: 'official_ruling' | 'profile_mismatch' | 'earlier_entry_wrong' | 'other'; note: string | null } | null }[];
     profile_update_hints: string[];
     complete: boolean; next_turn: { index: number; team_id: TeamId; kind: Kind } | null };
 }

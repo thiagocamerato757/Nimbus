@@ -111,14 +111,22 @@ class OverrideReason(Value):
         return self
 
 
+class CarriedAcknowledgement(Value):
+    game_id: str
+    game_number: int
+    fingerprint: str
+
+
 class Acknowledgement(Value):
     turn_index: int
     rule: str
     fingerprint: str
+    carried_from: tuple[CarriedAcknowledgement, ...] = Field(default=(), exclude_if=lambda v: not v)
     reason: OverrideReason
 
 
 class Violation(Value):
+    carried_from: tuple[CarriedAcknowledgement, ...] = Field(default=(), exclude_if=lambda v: not v)
     turn_index: int
     rule: str
     status: Literal["open", "acknowledged"]
@@ -153,6 +161,7 @@ def empty_lineups() -> dict[TeamId, tuple[str, ...]]:
 
 
 class Game(Value):
+    replay_of: str | None = None
     winner: TeamId | None = None
     voided: bool = False
     player_assignments: tuple[PlayerAssignment, ...] = ()

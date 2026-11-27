@@ -45,6 +45,8 @@ export default function App() {
   const [overrideNote, setOverrideNote] = useState('');
   const [correction, setCorrection] = useState<{ game: string; turn: number; character: string } | null>(null);
   const [winnerPrompt, setWinnerPrompt] = useState(false);
+  const [replay, setReplay] = useState<{ source: string; choice: '' | 'copy_draft' | 'new_draft'; side: string; first: TeamId; patch: string; lineups: Record<TeamId, string[]>; version: string } | null>(null);
+  const [replayPreview, setReplayPreview] = useState<Game | null>(null);
   const [promptWinner, setPromptWinner] = useState<TeamId>('A');
   const profile = profiles.find(p => p.id === (series?.profile_id ?? profileId));
   const current = series?.games.at(-1);
@@ -70,6 +72,25 @@ export default function App() {
     finally { setLoading(false); }
   }
   useEffect(() => { void load(); }, []);
+
+  useEffect(() => {
+    setReplayPreview(null);
+    if (!replay?.choice || !series) return;
+    let active = true;
+    requestSnapshot<Game>(`/series/${series.id}/games/${replay.source}/replay-preview`, {
+      draft_choice: replay.choice, team_a_side: replay.side, first_pick_team: replay.first,
+      patch: replay.patch || null, lineups: replay.lineups,
+    }, replay.version).then(result => { if (active) { setReplayPreview(result.data); setError(''); } })
+      .catch(e => { if (active) setError(errorText(e instanceof ApiError ? e.code : 'unexpected')); });
+    return () => { active = false; };
+  }, [replay, series?.id]);
+
+  function setupReplay() {
+    if (!current) return;
+    setReplay({source: current.id, choice: '', patch: current.patch ?? '', lineups: {...current.lineups},
+      side: current.assignments.find(a => a.team_id === 'A')!.side,
+      first: current.assignments.find(a => a.position === 'first')!.team_id, version});
+  }
 
   async function save(path: string, body?: unknown, expectedVersion?: string, correctedAction?: { game: string; turn: number }) {
     setBusy(true); setError(''); setRejectedRule(''); setCorrectionImpact([]);
@@ -170,12 +191,13 @@ export default function App() {
     </ol> : <p className="empty">{t('noActions')}</p>;
   }
 
-  function violationList(game: Game) {
+  function violationList(game: Game, preview = false) {
     return game.state.violations.map(violation => <div key={`${violation.turn_index}-${violation.rule}`}>
       <p>{t(violation.status === 'acknowledged' ? 'acknowledgedViolation' : 'openViolation')} · {t('turn', { number: violation.turn_index + 1, team: teamName(game.actions.find(a => a.turn_index === violation.turn_index)!.team_id), kind: '' })} · {errorText(violation.rule)}
+        {violation.carried_from?.map((source, index) => <span key={`${source.game_id}-${index}`}> · <a href={`#game-${source.game_id}`}>{t('carriedFrom', {number: source.game_number})}</a></span>)}
         {violation.reason && <> · {t(violation.reason.category)}{violation.reason.note && <> · {violation.reason.note}</>}</>}
       </p>
-      {violation.status === 'open' && <form onChangeCapture={() => setEditVersion(previous => previous ?? version)} onSubmit={event => {
+      {violation.status === 'open' && !preview && <form onChangeCapture={() => setEditVersion(previous => previous ?? version)} onSubmit={event => {
         event.preventDefault();
         const fields = new FormData(event.currentTarget);
         void save(`/series/${series!.id}/games/${game.id}/actions/${violation.turn_index}/acknowledge`, {
@@ -198,11 +220,11 @@ export default function App() {
     <aside className="sidebar">
       <a className="brand" href="/" aria-label={t('brand')}><span className="brand-mark" aria-hidden="true">N</span>{t('brand')}</a>
       <p className="sidebar-caption">{t('workspace')}</p>
-      <button className="new-series" onClick={() => { setSelectedId(null); setCorrectionImpact([]); setWinnerPrompt(false); setError(''); setEditVersion(null); setCharacter(''); setRejectedRule(''); }} disabled={busy}>{t('newSeries')}</button>
+      <button className="new-series" onClick={() => { setSelectedId(null); setReplay(null); setCorrectionImpact([]); setWinnerPrompt(false); setError(''); setEditVersion(null); setCharacter(''); setRejectedRule(''); }} disabled={busy}>{t('newSeries')}</button>
       <h2 className="eyebrow">{t('yourSeries')}</h2>
       <nav className="series-nav">
         {seriesList.map(item => <button key={item.id} className={series?.id === item.id ? 'selected' : ''}
-          disabled={busy} onClick={() => { setSelectedId(item.id); setCorrectionImpact([]); setWinnerPrompt(false); setEditVersion(null); setCharacter(''); setError(''); }}>
+          disabled={busy} onClick={() => { setSelectedId(item.id); setReplay(null); setCorrectionImpact([]); setWinnerPrompt(false); setEditVersion(null); setCharacter(''); setError(''); }}>
           {t('vs', { a: item.teams[0].name, b: item.teams[1].name })}
         </button>)}
         {!seriesList.length && <p className="muted">{t('noSeries')}</p>}
@@ -262,6 +284,32 @@ export default function App() {
       </section> : <>
         <p data-testid="series-score">{series.teams.map(team => `${team.name} ${series.progress.score[team.id]}`).join(' · ')}{series.progress.ended && <> · {t('seriesEnded')}</>}</p>
         {!!series.progress.games_past_decision.length && <p role="alert">{t('pastDecision', { number: series.progress.deciding_game! })}</p>}
+        {current?.voided && !replay && <button disabled={busy} onClick={setupReplay}>{t('replayGame', {number: current.number})}</button>}
+        {replay && current?.id === replay.source && <section className="panel" role="region" aria-label={t('replaySetup')}>
+          <h2>{t('replaySetup')}</h2>
+          <form onSubmit={async event => {
+            event.preventDefault(); if (!replay.choice) return;
+            const result = await save(`/series/${series.id}/games/${replay.source}/replay`, {
+              draft_choice: replay.choice, team_a_side: replay.side, first_pick_team: replay.first,
+              patch: replay.patch || null, lineups: replay.lineups,
+            }, replay.version);
+            if (result) setReplay(null);
+          }}>
+            <label>{t('replayPatch')}<input maxLength={100} value={replay.patch} onChange={e => setReplay({...replay, patch: e.target.value})} /></label>
+            <label>{t('replaySide')}<select value={replay.side} onChange={e => setReplay({...replay, side: e.target.value})}>{profile?.sides.map(side => <option key={side} value={side}>{side}</option>)}</select></label>
+            <label>{t('replayFirst')}<select value={replay.first} onChange={e => setReplay({...replay, first: e.target.value as TeamId})}>{series.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+            {series.teams.map(team => <label key={team.id}>{t('replayLineup', {team: team.name})}<select multiple value={replay.lineups[team.id]} onChange={e => setReplay({...replay, lineups: {...replay.lineups, [team.id]: [...e.target.selectedOptions].map(option => option.value)}})}>
+              {players.filter(player => player.current_team_id === team.roster_id || current.lineups[team.id].includes(player.id)).map(player => <option key={player.id} value={player.id}>{player.name}</option>)}
+            </select></label>)}
+            <fieldset><legend>{t('replayChoice')}</legend>
+              <label><input type="radio" name="replay-choice" checked={replay.choice === 'copy_draft'} onChange={() => setReplay({...replay, choice: 'copy_draft'})} />{t('copyDraft')}</label>
+              <label><input type="radio" name="replay-choice" checked={replay.choice === 'new_draft'} onChange={() => setReplay({...replay, choice: 'new_draft'})} />{t('newDraft')}</label>
+            </fieldset>
+            <button disabled={busy || !replay.choice}>{t('createReplay')}</button>
+            <button type="button" onClick={() => setReplay(null)}>{t('cancelReplay')}</button>
+          </form>
+          {replayPreview && <div data-testid="replay-preview"><h3>{t('replayPreview')}</h3>{series.teams.map(team => <div key={team.id}>{actionList(replayPreview, team.id, 'pick')}{actionList(replayPreview, team.id, 'ban')}</div>)}{violationList(replayPreview, true)}</div>}
+        </section>}
         {winnerPrompt && <section role="dialog" aria-modal="true" aria-label={t('winnerPrompt')} className="panel">
           <h2>{t('winnerPrompt')}</h2>
           <label>{t('winner')}<select value={promptWinner} onChange={e => setPromptWinner(e.target.value as TeamId)}>{series.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
@@ -335,12 +383,13 @@ export default function App() {
             <label>{t('firstPick')}<select value={firstPick} onChange={e => setFirstPick(e.target.value as TeamId)}>
               {series.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
             <label>{t('gamePatch')}<input value={gamePatch} placeholder={series.patch ?? ''} onChange={e => setGamePatch(e.target.value)} maxLength={100} /></label>
-            <button className="primary" disabled={busy}>{t('startGame', { number: series.games.length + 1 })}</button>
+            <button className="primary" disabled={busy}>{t('startGame', { number: Math.max(0, ...series.games.map(game => game.number)) + 1 })}</button>
           </form>
         </section> : <p className="muted">{series.progress.ended ? t('seriesEnded') : series.games.filter(g => !g.voided).length >= series.rule_snapshot.series_format.games ? t('allStarted') : t('remaining')}</p>}
         {!!series.games.length && <section className="timeline" data-testid="timeline"><div className="section-title"><h2>{t('timeline')}</h2><p>{t('timelineHint')}</p></div>
-          {series.games.map(game => <details className="timeline-game panel" key={game.id} open={game.id !== current?.id}>
-            <summary><strong>{t('game', { number: game.number })}</strong><span>{t(game.state.status)}{game.state.result_pending && <> · {t('resultPending')}</>}</span></summary>
+          {series.games.map(game => <details id={`game-${game.id}`} className="timeline-game panel" key={game.id} open={game.id !== current?.id}>
+            <summary><strong>{t('game', { number: game.number })}{game.replay_of && <> · {t('replayOf', {number: game.number})}</>}</strong><span>{t(game.state.status)}{game.state.result_pending && <> · {t('resultPending')}</>}</span></summary>
+            {game.replay_of && <a href={`#game-${game.replay_of}`}>{t('viewSource')}</a>}
             <form key={game.winner ?? 'pending'} onChangeCapture={() => setEditVersion(previous => previous ?? version)} onSubmit={event => {
               event.preventDefault(); const fields = new FormData(event.currentTarget);
               void save(`/series/${series.id}/games/${game.id}/winner`, { winner: fields.get('winner') || null });
