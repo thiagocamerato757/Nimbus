@@ -15,7 +15,7 @@ Behaviour agreed during design that is neither a glossary term ([CONTEXT.md](../
 
 - A Game goes Drafting → Drafted → Closed, and can be Voided from any status. Only the current Game, the last one in the Series, can be voided (ADR 0034, amended 2026-11-27).
 - Drafted means every turn is filled or, for bans, skipped.
-- Closed requires **all** Player Assignments **and** a winner.
+- Closed requires **all** Player Assignments **and** a winner. A Game's missing list shows everything still needed to reach Closed: a complete draft, a Player Assignment for every pick turn and the winner if absent. A stored winner that does not count yet is a note, not a missing item (amended 2026-11-27).
 - The next Game can start once the previous one is Drafted (or Closed). Neither missing Player Assignments nor a missing winner blocks it. After a Voided Game, the next Game is always its Replay, under the same number. The Replay follows the same gate as an ordinary next Game, so it is rejected while the Series has ended (ADR 0034, amended 2026-11-27).
 - A winner can be set only for a Drafted or Closed Game, and cleared in any status. A winner left on a Game that returns to Drafting does not count until its draft is complete again, and can still be cleared (amended 2026-11-27).
 

@@ -7,6 +7,11 @@ Each Game stores optional `first_selection_holder` (`A`, `B` or null) and
 choice the holder exercised; the Team's recorded Side/Draft Position gives its
 result. Neither field is required, and either can be corrected or cleared through
 `POST /api/series/{series}/games/{game}/first-selection` or the timeline form.
+Holder and choice go together (amended 2026-11-27). A save that keeps the same
+holder keeps the stored choice. A save that changes the holder clears the stored
+choice, because it belonged to the other Team. Unsent fields are kept unless that
+would leave them inconsistent, and the timeline form sends the choice only when
+the analyst changed it.
 Those edits do not create or change Draft Actions, winners or Player Assignments.
 Turn ownership always follows the recorded Draft Positions.
 
