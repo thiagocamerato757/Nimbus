@@ -193,7 +193,7 @@ The developer decided how to resolve the Claude Code review findings above and a
   - Design notes and `docs/first-selection.md` are updated.
   - #2 and #13 bodies have dated decision sections.
   - The remaining smells are listed in [#35](https://github.com/thiagocamerato757/Nimbus/issues/35).
-- **Not committed.** The changes remain uncommitted for the developer's review.
+- **Committed later.** These changes were committed after the third round, in `2632f51` (code and tests), `a3ec9dd` (docs and the spec move) and `c5f33d5` (this record), and pushed to PR #34.
 - **Claude Code review:** run `sail-skills:code-review` again against `dev` before merging PR #34.
 
 ## PR #34 second round and Claude review — 2026-11-27
@@ -260,3 +260,65 @@ The developer decided how to resolve the Claude Code review findings above and a
 - Mutation checks:
   - The restored BS-011 API test fails when voided Games lock later Games.
   - The Replay-gate journey fails without its UI guard.
+
+## Claude Code review of PR #34 after the third round — 2026-11-27
+
+[PR #34](https://github.com/thiagocamerato757/Nimbus/pull/34) was pushed at `c5f33d5` (`git push origin feat/issues-11-14`, using `gh` as a one-off credential helper). `sail-skills:code-review` then ran against `origin/dev...c5f33d5`: merge base `36a27a1`, 12 commits, 51 files. The developer's uncommitted `AGENTS.md`/`AI_SHOWCASE.md` edits were outside the diff.
+
+- **Agents and usage:**
+  - Claude Code primary agent (Opus 5.5), plus two parallel Claude reviewers.
+  - Standards reviewer: 86,939 tokens, 111s.
+  - Spec reviewer: 149,759 tokens, 380s.
+  - Total: 236,698 tokens, reviewers only, as reported by the harness. The split, primary-agent tokens and billing are unavailable.
+- **Time:** 20:44:20Z–20:51:32Z UTC, elapsed.
+- **Verification:**
+  - The Spec reviewer reproduced finding 1 with one scratch TestClient script against a temporary database.
+  - The primary agent re-read `api.py:340-356` and this file's third-round section.
+  - No suites were re-run. The last full runs (277 Python tests and 19 Playwright journeys, plus Ruff, strict mypy and the build) are recorded above.
+- **Claude review status: completed, changes requested.**
+- **Spec findings:**
+  1. Starting a Game in an ended Series whose current Game is Voided returns `replay_required`, while `/replay` returns `series_ended` (reproduced). `replay_required` is checked before the ended gate.
+  2. The Replay `series_ended` gate exists only at the API, not at the engine seam.
+  3. A Game sent back to Drafting with a stored winner lists only "draft" as missing (nit).
+  4. The Replay panel keeps the version captured when it opened, so another save while it is open makes every retry return `stale_version`. This dates from `7aee070`; it was read only.
+  5. Minor: `replay-preview` never bumps the version, and an edit with only a holder clears the stored First Selection choice.
+- **Standards findings:**
+  - Hard: the third-round section above lacks PR, evidence and review-status links and its verification commands. This section supplies them. The "Not committed" line in the review-fixes section is out of date: those changes are in `2632f51`/`a3ec9dd`/`c5f33d5`.
+  - Judgement calls:
+    - `create_replay` checks the latest attempt by hand instead of using `current_game`.
+    - `check_entry` has `game_voided`/`draft_complete` branches the API pre-empts.
+    - `start_game` restates the `can_start_next` parts.
+    - The UI copies `is_drafted_or_closed` and the Draft Position comparison.
+    - In `derive_progress`, the list named `drafted` also holds Closed Games.
+    - A Retired Character returns `unknown_character`.
+    - `from error` and `from None` are mixed.
+- **Fixes:** none applied; awaiting the developer.
+
+## PR #34 fourth round — 2026-11-27
+
+[PR #34](https://github.com/thiagocamerato757/Nimbus/pull/34). Developer decisions on the third review:
+
+- **Spec 1, fixed at the root.**
+  - The engine's ordered gate is `next_game_block`: `series_ended`, `replay_required`, `draft_incomplete`, then `series_full`.
+  - `can_start_next` and `start_game` both use it.
+  - `create_replay` uses `current_game` through `replay_block`.
+  - The ADR 0010 wording is corrected.
+- **Spec 2.** The ended gate holds at the engine seam for both starting and replaying.
+- **Spec 3.** The missing list shows everything still needed to reach Closed. A stored winner that does not count yet is a note.
+- **Spec 4.** A stale Replay setup reloads, rebases its version, lists what changed, and saves on the next try.
+- **Spec 5.** Holder and choice go together: keeping the holder keeps the stored choice, and changing it clears the choice. The timeline form sends the choice only when changed.
+- **Other.** The out-of-date "Not committed" line is corrected. The UI copies of server rules and the remaining judgement calls are in [#35](https://github.com/thiagocamerato757/Nimbus/issues/35).
+
+**Run:**
+- Time: 20:54:26Z–2026-11-27T21:06:07Z UTC, elapsed.
+- Agents and usage: the Claude Code primary agent (Opus 5.5) only. Primary-agent tokens and billing are unavailable.
+- **First attempt: No.** A scripted edit dropped the `is_drafted_or_closed` import still used by the winner route. Ruff and mypy caught it before any test run, and it was restored.
+
+**Validation:**
+- `uv run --frozen pytest -q tests`: 285 passed.
+- `npx playwright test`: 20 passed.
+- `ruff check` and `ruff format --check`, `mypy`, `git diff --check` and `npm run build`: passed.
+- Mutation check: the stale-Replay journey fails without the rebase.
+- The new tests failed before their fixes, including the reproduced conflicting-rejection case.
+
+**Claude review:** pending. Per the developer's stopping rule, the next review covers only this round's diff. If it has no reproduced Spec finding, PR #34 is merged and anything else goes to #35.
