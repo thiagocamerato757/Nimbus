@@ -1,0 +1,164 @@
+{
+  "snapshot_utc": "2026-11-27T15:08:45.763453+00:00",
+  "measurements": [
+    {
+      "role": "primary",
+      "file": "/home/cameratothiago/.codex/sessions/2026/11/27/rollout-2026-11-27T11-23-19-01a21d63-a47c-7952-a990-f8326beff8c9.jsonl",
+      "first_counter_utc": "2026-11-27T14:23:50.112Z",
+      "last_counter_utc": "2026-11-27T15:08:13.331Z",
+      "counters": {
+        "input_tokens": 7288562,
+        "cached_input_tokens": 7134336,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 23592,
+        "reasoning_output_tokens": 4149,
+        "total_tokens": 7312154
+      },
+      "rate_limits": {
+        "limit_id": "codex",
+        "limit_name": null,
+        "primary": {
+          "used_percent": 68.0,
+          "window_minutes": 300,
+          "resets_at": 1795806270
+        },
+        "secondary": {
+          "used_percent": 35.0,
+          "window_minutes": 10080,
+          "resets_at": 1796332634
+        },
+        "credits": {
+          "has_credits": false,
+          "unlimited": false,
+          "balance": "0"
+        },
+        "individual_limit": null,
+        "spend_control_reached": null,
+        "plan_type": "plus",
+        "rate_limit_reached_type": null
+      }
+    },
+    {
+      "role": "/root/issue13",
+      "file": "/home/cameratothiago/.codex/sessions/2026/11/27/rollout-2026-11-27T11-55-09-01a21d80-c9c3-7d81-92e2-bfe3e0297b50.jsonl",
+      "first_counter_utc": "2026-11-27T14:55:13.846Z",
+      "last_counter_utc": "2026-11-27T15:07:14.736Z",
+      "counters": {
+        "input_tokens": 4146829,
+        "cached_input_tokens": 4046208,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 20275,
+        "reasoning_output_tokens": 2358,
+        "total_tokens": 4167104
+      },
+      "rate_limits": {
+        "limit_id": "codex",
+        "limit_name": null,
+        "primary": {
+          "used_percent": 67.0,
+          "window_minutes": 300,
+          "resets_at": 1795806270
+        },
+        "secondary": {
+          "used_percent": 34.0,
+          "window_minutes": 10080,
+          "resets_at": 1796332634
+        },
+        "credits": {
+          "has_credits": false,
+          "unlimited": false,
+          "balance": "0"
+        },
+        "individual_limit": null,
+        "spend_control_reached": null,
+        "plan_type": "plus",
+        "rate_limit_reached_type": null
+      }
+    },
+    {
+      "role": "/root/issue12",
+      "file": "/home/cameratothiago/.codex/sessions/2026/11/27/rollout-2026-11-27T11-38-15-01a21d71-50bf-7131-ae4c-6458d304344d.jsonl",
+      "first_counter_utc": "2026-11-27T14:38:18.881Z",
+      "last_counter_utc": "2026-11-27T14:53:56.141Z",
+      "counters": {
+        "input_tokens": 5018734,
+        "cached_input_tokens": 4927360,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 30007,
+        "reasoning_output_tokens": 8562,
+        "total_tokens": 5048741
+      },
+      "rate_limits": {
+        "limit_id": "codex",
+        "limit_name": null,
+        "primary": {
+          "used_percent": 53.0,
+          "window_minutes": 300,
+          "resets_at": 1795806270
+        },
+        "secondary": {
+          "used_percent": 32.0,
+          "window_minutes": 10080,
+          "resets_at": 1796332634
+        },
+        "credits": {
+          "has_credits": false,
+          "unlimited": false,
+          "balance": "0"
+        },
+        "individual_limit": null,
+        "spend_control_reached": null,
+        "plan_type": "plus",
+        "rate_limit_reached_type": null
+      }
+    },
+    {
+      "role": "/root/issue11",
+      "file": "/home/cameratothiago/.codex/sessions/2026/11/27/rollout-2026-11-27T11-25-42-01a21d65-d52e-7b62-9406-2cdc2bcd2f09.jsonl",
+      "first_counter_utc": "2026-11-27T14:25:47.290Z",
+      "last_counter_utc": "2026-11-27T14:37:49.009Z",
+      "counters": {
+        "input_tokens": 3669342,
+        "cached_input_tokens": 3570816,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 23929,
+        "reasoning_output_tokens": 4390,
+        "total_tokens": 3693271
+      },
+      "rate_limits": {
+        "limit_id": "codex",
+        "limit_name": null,
+        "primary": {
+          "used_percent": 37.0,
+          "window_minutes": 300,
+          "resets_at": 1795806270
+        },
+        "secondary": {
+          "used_percent": 30.0,
+          "window_minutes": 10080,
+          "resets_at": 1796332634
+        },
+        "credits": {
+          "has_credits": false,
+          "unlimited": false,
+          "balance": "0"
+        },
+        "individual_limit": null,
+        "spend_control_reached": null,
+        "plan_type": "plus",
+        "rate_limit_reached_type": null
+      }
+    }
+  ],
+  "aggregate": {
+    "input_tokens": 20123467,
+    "output_tokens": 97803,
+    "cached_input_tokens": 19678720,
+    "total_tokens": 20221270
+  },
+  "scope": "Fresh task sessions baseline zero, latest cumulative provider counter once per session. Cached input included. Auxiliary provider guardians excluded; no billing charges available. Snapshot excludes responses generated after last counter.",
+  "task_started_utc": "2026-11-27T14:23:49+00:00",
+  "elapsed_seconds_at_snapshot": 2696.763453,
+  "task_status": "Partial: #12 complete; #11 duplicate carrier pending; #13 replay pending; #14 blocked by #13",
+  "pr": "https://github.com/thiagocamerato757/Nimbus/pull/34"
+}
