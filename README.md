@@ -196,6 +196,9 @@ For a Windows browser with the servers in WSL2, open `http://localhost:5173`.
 See [local access and concurrent tabs](docs/development/local-access.md) for the
 supported setup, request contract, and two-tab verification.
 
+See [back up and restore a Workspace](docs/development/backups.md) for manual
+backups, automatic retention, and restoring safely with the app closed.
+
 ### Verification
 
 From the repository root:
@@ -289,3 +292,10 @@ Nimbus isn't endorsed by Riot Games and doesn't reflect the views or opinions of
 Deadlock is a trademark of Valve Corporation. Nimbus is not affiliated with or endorsed by Valve.
 
 Nimbus is an independent project and is not affiliated with any esports organization.
+
+Title profiles are validated when the application loads them. Invalid rules or
+Character Catalog entries return a `profile_load_failed` API error naming the
+file and defect; a Character referenced by stored Draft Actions must remain in
+the catalog, even when Retired. Restart Nimbus after editing profile files so an
+in-progress Series keeps using its already checked profile. Existing Series keep
+their Rule Snapshots when the application loads updated files.

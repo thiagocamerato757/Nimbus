@@ -36,3 +36,15 @@ rule_settings:
   banning_locked: reject
   same_character_twice: reject
   voided_games_count: false
+
+series_formats:
+  - {kind: best_of, games: 1}
+  - {kind: best_of, games: 3}
+  - {kind: best_of, games: 5}
+  - {kind: fixed_length, games: 4}
+default_series_format: {kind: best_of, games: 5}
+fearless_presets:
+  - {id: "off", lock_reach: none, lock_sources: picks}
+  - {id: soft, lock_reach: picking_team, lock_sources: picks}
+  - {id: hard, lock_reach: both_teams, lock_sources: picks}
+default_fearless: hard

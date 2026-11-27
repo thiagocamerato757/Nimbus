@@ -27,7 +27,7 @@
 - Check provider data retention terms before real team data is used
 - Whether removing a Source must also clear Suggestion Log entries and saved report content derived from it
 - Spelled-out number lists and Observation templates in English and pt-BR; digit allowlist
-- Override reason categories
+- [x] Override reasons (#10): Official ruling, Profile mismatch, Earlier entry was wrong, Other. A note is optional except for Other, which requires a nonblank note. Two Profile mismatch Overrides for the same rule within one Series show advice to update the Title profile.
 - Timer start, reset and display
 - What is pre-filled when replaying a Voided Game
 - Changing a Series Format after Games exist

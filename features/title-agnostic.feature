@@ -14,5 +14,12 @@ Feature: Title-agnostic rules engine
       | 1             |
       | 2             |
 
-  # The BS-005 Scenario Outline examples remain deferred until their behavior exists:
-  # BS-003 in issue #9; BS-002 and BS-004 in issue #15.
+  # Parent: BS-005 (BS-003 example row), implemented in the same parameterized engine suite.
+  Scenario: Deriving Soft Fearless under the synthetic profile preserves wasted-ban outcomes
+    Given the synthetic 6-player profile under Soft Fearless
+    And Team A picked Lantern in Game 1
+    When the engine validates each Team's ban of Lantern in Game 2
+    Then Team A's ban has no rejection
+    And Team B's ban is rejected as wasted
+
+  # BS-002 and BS-004 rows remain deferred to issue #15.

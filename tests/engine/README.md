@@ -5,9 +5,9 @@ automatic `profile` fixture and runs once for League of Legends and once for
 the test-only synthetic Deadlock-style Title profile. Add engine cases here,
 with the parent BS id in the test name or comment; do not copy a test per Title.
 
-The agreed seam is `derive_state` / `validate_action`: Rule Snapshot, Character
+The agreed seam is `derive_state` / `validate_action` / `check_entry` / `record_entry`: Rule Snapshot, Character
 Catalog and recorded Games/Draft Actions in; Locks, availability, turn state and
-rejections out. Use `profile`, `assignments`, `character_ids`, `first_pick_index`
+rejections, notices, Violations and acknowledged entry facts out. Use `profile`, `assignments`, `character_ids`, `first_pick_index`
 and `previous_pick` for inputs. Character names, Side names, turn offsets and
 team sizes must come from the profile. Independent expected outcomes belong
 in assertions or worked-example fixtures (such as `opening_ban_teams`), not a
@@ -16,7 +16,8 @@ second implementation of the rules.
 Property cases use this same fixture and draw from its own Catalog; they must
 not iterate over production profiles themselves. Hypothesis runs 80 repeatable
 examples per profile and checks determinism, unchanged inputs and that locked
-Characters are unavailable.
+Characters are unavailable. Issue #10 adds skipped and overridden action streams,
+reconstruction from serialized facts, and acknowledgement rule/action/cause checks.
 
 The synthetic YAML files in `tests/fixtures/profiles` describe six Players per
 Team, six bans A, BB, AA, B, then twelve picks (six per Draft Position). Their

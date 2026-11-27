@@ -9,7 +9,10 @@ from contextlib import closing, contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
+
+from pydantic import BaseModel
 
 from nimbus.models import DraftAction, Game, Series
 
@@ -20,8 +23,21 @@ def default_data_dir() -> Path:
     return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "nimbus"
 
 
+class BackupError(RuntimeError):
+    """No verified backup was produced; the protected operation must stop."""
+
+
+class Backup(BaseModel):
+    name: str
+    kind: Literal["manual", "automatic"]
+    verified: bool = True
+
+
 class Store:
     def __init__(self, directory: Path):
+        self.backup_retention = int(os.environ.get("NIMBUS_BACKUP_RETENTION", "10"))
+        if self.backup_retention < 1:
+            raise ValueError("NIMBUS_BACKUP_RETENTION must be at least 1")
         directory = directory.expanduser().resolve()
         if directory.is_relative_to("/mnt"):
             logging.getLogger(__name__).warning(
@@ -35,8 +51,8 @@ class Store:
         with self.connection() as connection:
             connection.execute("PRAGMA journal_mode=WAL")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version == 1:
-                self.backup_before_migration(connection)
+            if version in (1, 2, 3):
+                self.create_backup("migration")
             if version == 0:
                 migration = Path(__file__).with_name("migrations") / "001_initial.sql"
                 connection.executescript("BEGIN;\n" + migration.read_text() + "\nCOMMIT;")
@@ -44,7 +60,24 @@ class Store:
             if version == 1:
                 migration = Path(__file__).with_name("migrations") / "002_workspace_version.sql"
                 connection.executescript("BEGIN;\n" + migration.read_text() + "\nCOMMIT;")
-            elif version != 2:
+                version = 2
+            if version == 2:
+                migration = Path(__file__).with_name("migrations") / "003_series_settings.sql"
+                # Compatibility with an older-schema restore that retains additive columns.
+                columns = {row[1] for row in connection.execute("PRAGMA table_info(series)")}
+                if "patch" not in columns:
+                    connection.executescript("BEGIN;\n" + migration.read_text() + "\nCOMMIT;")
+                else:
+                    connection.execute("PRAGMA user_version = 3")
+                version = 3
+            if version == 3:
+                migration = Path(__file__).with_name("migrations") / "004_rule_entry.sql"
+                columns = {row[1] for row in connection.execute("PRAGMA table_info(games)")}
+                if "acknowledgements" not in columns:
+                    connection.executescript("BEGIN;\n" + migration.read_text() + "\nCOMMIT;")
+                else:
+                    connection.execute("PRAGMA user_version = 4")
+            elif version != 4:
                 raise RuntimeError(f"Unsupported Nimbus database schema: {version}")
 
     @contextmanager
@@ -87,13 +120,17 @@ class Store:
                 ]
                 games.append(
                     Game(
+                        patch=game["patch"],
                         id=game["id"],
                         number=game["number"],
                         assignments=json.loads(game["assignments"]),
                         actions=tuple(DraftAction.model_validate(a) for a in actions),
+                        acknowledgements=json.loads(game["acknowledgements"]),
                     )
                 )
             return Series(
+                patch=row["patch"],
+                record_type=row["record_type"],
                 id=row["id"],
                 profile_id=row["profile_id"],
                 teams=json.loads(row["teams"]),
@@ -105,33 +142,41 @@ class Store:
     def create(self, series: Series) -> None:
         with self.connection() as connection:
             connection.execute(
-                "INSERT INTO series VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO series (id, profile_id, teams, our_team, rule_snapshot, patch, record_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     series.id,
                     series.profile_id,
                     json.dumps([t.model_dump() for t in series.teams]),
                     series.our_team,
                     series.rule_snapshot.model_dump_json(),
+                    series.patch,
+                    series.record_type,
                 ),
             )
 
     def add_game(self, series_id: str, game: Game) -> None:
         with self.connection() as connection:
             connection.execute(
-                "INSERT INTO games VALUES (?, ?, ?, ?)",
+                "INSERT INTO games (id, series_id, number, assignments, patch) VALUES (?, ?, ?, ?, ?)",
                 (
                     game.id,
                     series_id,
                     game.number,
                     json.dumps([a.model_dump() for a in game.assignments]),
+                    game.patch,
                 ),
             )
 
-    def add_action(self, game_id: str, action: DraftAction) -> None:
+    def add_action(self, game_id: str, action: DraftAction, game: Game) -> None:
         with self.connection() as connection:
             connection.execute(
                 "INSERT INTO draft_actions VALUES (?, ?, ?, ?, ?)",
                 (game_id, action.turn_index, action.team_id, action.kind, action.character_id),
+            )
+
+            connection.execute(
+                "UPDATE games SET acknowledgements = ? WHERE id = ?",
+                (json.dumps([a.model_dump() for a in game.acknowledgements]), game_id),
             )
 
     def begin_request(self, writing: bool) -> sqlite3.Connection:
@@ -146,15 +191,45 @@ class Store:
             raise
         return connection
 
-    def backup_before_migration(self, source: sqlite3.Connection) -> None:
-        """ADR-0032: fail startup before changing facts if a checked backup fails."""
+    def create_backup(self, reason: str | None = None) -> Backup:
+        """Preserve committed facts through SQLite, before the caller changes them.
+
+        Use a dedicated read connection: backing up the request's connection while
+        it holds BEGIN IMMEDIATE would wait on its own write transaction.
+        """
         directory = self.path.parent / "backups"
-        directory.mkdir(exist_ok=True)
+        kind: Literal["manual", "automatic"] = "automatic" if reason else "manual"
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-        path = directory / f"automatic-migration-{timestamp}-{uuid4().hex}.sqlite3"
-        with closing(sqlite3.connect(path)) as backup:
-            source.backup(backup)
-            if backup.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
-                raise RuntimeError(f"Migration backup failed its integrity check: {path}")
-        for expired in sorted(directory.glob("automatic-migration-*.sqlite3"))[:-10]:
-            expired.unlink()
+        label = f"automatic-{reason}" if reason else "manual"
+        path = directory / f"{label}-{timestamp}-{uuid4().hex}.sqlite3"
+        pending = path.with_suffix(".pending")
+        try:
+            directory.mkdir(exist_ok=True)
+            with (
+                closing(sqlite3.connect(self.path)) as source,
+                closing(sqlite3.connect(pending)) as backup,
+            ):
+                source.backup(backup)
+                if backup.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
+                    raise BackupError(f"Backup failed its integrity check: {path}")
+            pending.rename(path)
+        except (sqlite3.Error, OSError, BackupError) as error:
+            pending.unlink(missing_ok=True)
+            raise BackupError(f"Could not create a verified backup: {error}") from error
+        if reason:
+            for expired in sorted(
+                directory.glob("automatic-*.sqlite3"),
+                key=lambda item: item.name.rsplit("-", 2)[-2],
+            )[: -self.backup_retention]:
+                expired.unlink()
+        return Backup(name=path.name, kind=kind)
+
+    def list_backups(self) -> list[Backup]:
+        directory = self.path.parent / "backups"
+        return [
+            Backup(
+                name=path.name, kind="manual" if path.name.startswith("manual-") else "automatic"
+            )
+            for path in sorted(directory.glob("*.sqlite3"), reverse=True)
+            if path.name.startswith(("manual-", "automatic-"))
+        ]
