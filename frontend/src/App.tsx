@@ -45,10 +45,10 @@ export default function App() {
     try {
       const result = await requestSnapshot<Series>(path, body, editVersion ?? version);
       const updated = result.data;
+      setCharacter(''); setSearch('');
       workspace.accept({ data: [updated, ...seriesList.filter(item => item.id !== updated.id)], version: result.version });
       setSelectedId(updated.id); setEditVersion(null);
-      await workspace.refresh();
-      setCharacter(''); setSearch('');
+      void workspace.refresh();
     } catch (e) {
       setError(errorText(e instanceof ApiError ? e.code : 'unexpected'));
       if (e instanceof ApiError && e.code === 'stale_version') {
@@ -127,8 +127,8 @@ export default function App() {
               {t('progress', { filled: current.actions.length, total: series.rule_snapshot.draft_order.turns.length })}</span></div>
             {nextTurn ? <><h2 data-testid="next-turn">{t('turn', { number: nextTurn.index + 1, team: teamName(nextTurn.team_id), kind: t(nextTurn.kind) })}</h2>
               <form className="entry-form" onSubmit={record}>
-                <label>{t('search')}<input value={search} placeholder={t('searchHint')} onChange={e => { setSearch(e.target.value); setCharacter(''); }} /></label>
-                <label>{t('character')}<select value={character} onChange={e => { setCharacter(e.target.value); setEditVersion(version); }} required>
+                <label>{t('search')}<input disabled={busy} value={search} placeholder={t('searchHint')} onChange={e => { setSearch(e.target.value); setCharacter(''); }} /></label>
+                <label>{t('character')}<select disabled={busy} value={character} onChange={e => { setCharacter(e.target.value); setEditVersion(version); }} required>
                   <option value="">{t('select')}</option>
                   {profile?.catalog.filter(c => !c.retired && [c.name, ...c.aliases].some(name => name.toLowerCase().includes(search.toLowerCase())))
                     .map(c => <option key={c.id} value={c.id}>{current.state.locks[nextTurn.team_id].includes(c.id) ? t('lockedOption', { name: c.name }) : c.name}</option>)}
