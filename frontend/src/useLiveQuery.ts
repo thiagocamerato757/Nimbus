@@ -11,12 +11,16 @@ export function useLiveQuery<T>(path: string) {
     if (active.current) setSnapshot(previous =>
       previous && Number(previous.version) > Number(next.version) ? previous : next);
   }, []);
-  const refresh = useCallback(async () => {
+  // Resolves with the snapshot it loaded, or null when the request failed.
+  const refresh = useCallback(async (): Promise<Snapshot<T> | null> => {
     try {
-      accept(await requestSnapshot<T>(path));
+      const next = await requestSnapshot<T>(path);
+      accept(next);
       if (active.current) setError('');
+      return next;
     } catch (e) {
       if (active.current) setError(e instanceof ApiError ? e.code : 'unexpected');
+      return null;
     }
   }, [accept, path]);
   useEffect(() => {

@@ -51,6 +51,7 @@ export default function App() {
   const [winnerPrompt, setWinnerPrompt] = useState(false);
   const [replay, setReplay] = useState<{ source: string; choice: '' | 'copy_draft' | 'new_draft'; side: string; first: TeamId; patch: string; lineups: Record<TeamId, string[]>; version: string; holder?: TeamId | ''; selectionChoice?: string } | null>(null);
   const [replayPreview, setReplayPreview] = useState<Game | null>(null);
+  const [replayChanges, setReplayChanges] = useState<string[]>([]);
   const [promptWinner, setPromptWinner] = useState<TeamId>('A');
   const profile = profiles.find(p => p.id === (series?.profile_id ?? profileId));
   const current = series?.games.at(-1);
@@ -103,18 +104,50 @@ export default function App() {
       first_selection_holder: replayHolder || null,
       first_selection_choice: replay.selectionChoice || null,
     }, replay.version).then(result => { if (active) { setReplayPreview(result.data); setError(''); } })
-      .catch(e => { if (active) setError(errorText(e instanceof ApiError ? e.code : 'unexpected')); });
+      .catch(e => {
+        if (!active) return;
+        setError(errorText(e instanceof ApiError ? e.code : 'unexpected'));
+        if (e instanceof ApiError && e.code === 'stale_version') void rebaseReplay();
+      });
     return () => { active = false; };
   }, [replay, series?.id, replayHolder, copyBlocked]);
 
+  // What another edit changed in the Series while a form was open.
+  function describeChanges(before: Series, after: Series): string[] {
+    const fields: [keyof Game, Parameters<typeof t>[0]][] = [
+      ['winner', 'fieldWinner'], ['voided', 'fieldVoided'], ['actions', 'fieldActions'],
+      ['lineups', 'fieldLineups'], ['player_assignments', 'fieldAssignments'],
+      ['first_selection_holder', 'fieldHolder'], ['first_selection_choice', 'fieldChoice'], ['patch', 'fieldPatch'],
+    ];
+    return after.games.flatMap(game => {
+      const old = before.games.find(g => g.id === game.id);
+      if (!old) return [t('changeGameAdded', {number: game.number})];
+      const changed = fields.filter(([key]) => JSON.stringify(old[key]) !== JSON.stringify(game[key]));
+      return changed.length ? [t('changeGame', {number: game.number, fields: changed.map(([, label]) => t(label)).join(', ')})] : [];
+    });
+  }
+
+  // A stale Replay setup reloads the current state, keeps the analyst's entries,
+  // takes the latest version and lists what changed, so the next try can succeed.
+  async function rebaseReplay() {
+    if (!series) return;
+    const before = series;
+    const latest = await workspace.refresh();
+    const after = latest?.data.find(item => item.id === before.id);
+    if (!latest || !after) return;
+    setReplay(open => open && {...open, version: latest.version});
+    setReplayChanges(describeChanges(before, after));
+  }
+
   function setupReplay() {
     if (!current) return;
+    setReplayChanges([]);
     setReplay({source: current.id, choice: '', patch: current.patch ?? '', lineups: {...current.lineups},
       side: current.assignments.find(a => a.team_id === 'A')!.side,
       first: current.assignments.find(a => a.position === 'first')!.team_id, version});
   }
 
-  async function save(path: string, body?: unknown, expectedVersion?: string, correctedAction?: { game: string; turn: number }) {
+  async function save(path: string, body?: unknown, expectedVersion?: string, correctedAction?: { game: string; turn: number }, onStale?: () => Promise<void>) {
     setBusy(true); setError(''); setRejectedRule(''); setCorrectionImpact([]); setSetupNotice('');
     try {
       const result = await requestSnapshot<Series>(path, body, expectedVersion ?? editVersion ?? version);
@@ -146,7 +179,7 @@ export default function App() {
       if (e instanceof ApiError && ['fearless_lock', 'wasted_ban', 'duplicate_character'].includes(e.code)) setRejectedRule(e.code);
       if (e instanceof ApiError && e.code === 'stale_version') {
         setCharacter(''); setEditVersion(null); setCorrection(null);
-        await workspace.refresh();
+        await (onStale ? onStale() : workspace.refresh());
       }
     } finally { setBusy(false); }
   }
@@ -326,13 +359,13 @@ export default function App() {
               patch: replay.patch || null, lineups: replay.lineups,
               first_selection_holder: replayHolder || null,
               first_selection_choice: replay.selectionChoice || null,
-            }, replay.version);
-            if (result) setReplay(null);
+            }, replay.version, undefined, rebaseReplay);
+            if (result) { setReplay(null); setReplayChanges([]); }
           }}>
             <label>{t('replayPatch')}<input maxLength={100} value={replay.patch} onChange={e => setReplay({...replay, patch: e.target.value})} /></label>
             <label>{t('replaySide')}<select value={replay.side} onChange={e => setReplay({...replay, side: e.target.value, first: series.rule_snapshot.sides_coupled ? (e.target.value === series.rule_snapshot.first_pick_side ? 'A' : 'B') : replay.first})}>{seriesSides.map(side => <option key={side} value={side}>{side}</option>)}</select></label>
             <label>{t('replayFirst')}<select value={replay.first} disabled={series.rule_snapshot.sides_coupled} onChange={e => setReplay({...replay, first: e.target.value as TeamId})}>{series.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
-            <FirstSelectionFields teams={series.teams} holder={replayHolder} choice={replay.selectionChoice ?? ''} onHolder={holder => setReplay({...replay, holder})} onChoice={selectionChoice => setReplay({...replay, selectionChoice})} />
+            <FirstSelectionFields teams={series.teams} holder={replayHolder} choice={replay.selectionChoice ?? ''} onHolder={holder => setReplay({...replay, holder, selectionChoice: ''})} onChoice={selectionChoice => setReplay({...replay, selectionChoice})} />
             {series.teams.map(team => <label key={team.id}>{t('replayLineup', {team: team.name})}<select multiple value={replay.lineups[team.id]} onChange={e => setReplay({...replay, lineups: {...replay.lineups, [team.id]: [...e.target.selectedOptions].map(option => option.value)}})}>
               {players.filter(player => player.current_team_id === team.roster_id || current.lineups[team.id].includes(player.id)).map(player => <option key={player.id} value={player.id}>{player.name}</option>)}
             </select></label>)}
@@ -340,9 +373,11 @@ export default function App() {
               <label><input type="radio" name="replay-choice" checked={replay.choice === 'copy_draft'} onChange={() => setReplay({...replay, choice: 'copy_draft'})} />{t('copyDraft')}</label>
               <label><input type="radio" name="replay-choice" checked={replay.choice === 'new_draft'} onChange={() => setReplay({...replay, choice: 'new_draft'})} />{t('newDraft')}</label>
             </fieldset>
+            {!!replayChanges.length && <div role="status" data-testid="replay-changes"><p>{t('replayRebased')}</p>
+              <ul>{replayChanges.map(change => <li key={change}>{change}</li>)}</ul></div>}
             {copyBlocked && <p role="alert" data-testid="copy-blocked">{t('copy_requires_same_draft_positions')}</p>}
             <button disabled={busy || !replay.choice || copyBlocked}>{t('createReplay')}</button>
-            <button type="button" onClick={() => setReplay(null)}>{t('cancelReplay')}</button>
+            <button type="button" onClick={() => { setReplay(null); setReplayChanges([]); }}>{t('cancelReplay')}</button>
           </form>
           {replayPreview && <div data-testid="replay-preview"><h3>{t('replayPreview')}</h3>{series.teams.map(team => <div key={team.id}>{actionList(replayPreview, team.id, 'pick')}{actionList(replayPreview, team.id, 'ban')}</div>)}{violationList(replayPreview, true)}</div>}
         </section>}
@@ -418,7 +453,7 @@ export default function App() {
               {seriesSides.map(value => <option key={value} value={value}>{value === 'blue' || value === 'red' ? t(value) : value}</option>)}</select></label>
             <label>{t('firstPick')}<select aria-label={t('firstPick')} value={setupFirst} disabled={series.rule_snapshot.sides_coupled} onChange={e => setFirstPick(e.target.value as TeamId)}>
               {series.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
-            <FirstSelectionFields teams={series.teams} holder={shownHolder} choice={selectionChoice} onHolder={setSelectionHolder} onChoice={setSelectionChoice} />
+            <FirstSelectionFields teams={series.teams} holder={shownHolder} choice={selectionChoice} onHolder={holder => { setSelectionHolder(holder); setSelectionChoice(''); }} onChoice={setSelectionChoice} />
             {setupNotice && <p role="status" data-testid="prefill-notice">{setupNotice}</p>}
             <p className="muted">{t('selectionHint')}</p>
             <label>{t('gamePatch')}<input value={gamePatch} placeholder={series.patch ?? ''} onChange={e => setGamePatch(e.target.value)} maxLength={100} /></label>
@@ -442,9 +477,12 @@ export default function App() {
               <form key={`${game.id}-${game.first_selection_holder}-${game.first_selection_choice}`}
                 onChangeCapture={() => setEditVersion(previous => previous ?? version)} onSubmit={event => {
                   event.preventDefault(); const fields = new FormData(event.currentTarget);
+                  // Send the choice only when the analyst changed it: a new holder
+                  // with an untouched choice clears it on the server (#14, amended).
+                  const choice = fields.get('first_selection_choice') || null;
                   void save(`/series/${series.id}/games/${game.id}/first-selection`, {
                     first_selection_holder: fields.get('first_selection_holder') || null,
-                    first_selection_choice: fields.get('first_selection_choice') || null,
+                    ...(choice !== game.first_selection_choice ? {first_selection_choice: choice} : {}),
                   });
                 }}>
                 <FirstSelectionFields teams={series.teams} holder={game.first_selection_holder ?? ''} choice={game.first_selection_choice ?? ''} />

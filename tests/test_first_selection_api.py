@@ -298,3 +298,39 @@ def test_bs012_schema8_migration_and_backup_restore_keep_existing_game_facts(tmp
     shutil.copyfile(data / "backups" / backups[0]["name"], restored / "nimbus.sqlite3")
     with CurrentClient(create_app(data_dir=restored)) as client:
         assert client.get(base).json() == expected
+
+
+# Parent BS-012 / #14 (amended 2026-11-27): holder and choice go together. A
+# save that keeps the holder keeps the stored choice; changing the holder clears
+# the choice, which belonged to the other Team. Unsent fields are kept unless
+# that would leave them inconsistent; sent fields are recorded as sent.
+def test_bs012_first_selection_edit_keeps_holder_and_choice_consistent(tmp_path):
+    with CurrentClient(create_app(data_dir=tmp_path)) as client:
+        base = "/api/series/" + series(client)["id"]
+        game = post(
+            client,
+            base + "/games",
+            {
+                "team_a_side": "blue",
+                "first_pick_team": "A",
+                "first_selection_holder": "A",
+                "first_selection_choice": "side",
+            },
+        )["games"][0]
+        path = base + "/games/" + game["id"] + "/first-selection"
+
+        def edit(body):
+            saved = post(client, path, body)["games"][0]
+            return saved["first_selection_holder"], saved["first_selection_choice"]
+
+        assert edit({"first_selection_holder": "A"}) == ("A", "side")
+        assert edit({}) == ("A", "side")
+        assert edit({"first_selection_holder": "B"}) == ("B", None)
+        assert edit({"first_selection_choice": "draft_position"}) == ("B", "draft_position")
+        assert edit({"first_selection_holder": None}) == (None, None)
+        both = {"first_selection_holder": "A", "first_selection_choice": "side"}
+        assert edit(both) == ("A", "side")
+        assert edit({"first_selection_holder": "B", "first_selection_choice": "side"}) == (
+            "B",
+            "side",
+        )

@@ -55,3 +55,32 @@ test('requires explicit draft choice and shows prefill, carried reasons and link
   await expect(timeline.locator('details')).toHaveCount(3);
   await expect(page.getByTestId('draft-progress')).toHaveText('0 / 20 turns');
 });
+
+// Parent BS-026 / #13: another edit while the Replay setup is open makes the
+// first try stale. The panel reloads, lists what changed and the next try saves.
+test('a stale Replay setup reloads, shows what changed and saves on the next try', async ({ page, request }) => {
+  async function post(path: string, data: unknown) {
+    const current = await request.get('/api/series');
+    const response = await request.post(path, {headers: {'X-Nimbus-App': '1', 'X-Nimbus-Version': current.headers()['x-nimbus-version']}, data});
+    expect(response.ok(), await response.text()).toBeTruthy();
+    return response.json();
+  }
+  let series = await post('/api/series', {profile_id: 'league-of-legends', team_a: 'Stale Owls', team_b: 'Stale Foxes'});
+  series = await post(`/api/series/${series.id}/games`, {team_a_side: 'blue', first_pick_team: 'A'});
+  const base = `/api/series/${series.id}/games/${series.games[0].id}`;
+  await post(base + '/actions', {character_id: 'Ahri'});
+  await post(base + '/void', {});
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Stale Owls vs Stale Foxes', exact: true}).click();
+  await page.getByRole('button', {name: 'Replay Game 1', exact: true}).click();
+  const setup = page.getByRole('region', {name: 'Replay setup'});
+  await setup.getByLabel('New draft', {exact: true}).check();
+  await expect(setup.getByTestId('replay-preview')).toBeVisible();
+  await post(base + '/first-selection', {first_selection_holder: 'B'});
+  await setup.getByRole('button', {name: 'Create Replay', exact: true}).click();
+  await expect(setup.getByTestId('replay-changes')).toContainText('Game 1: First Selection holder');
+  await expect(page.getByText('This edit is outdated. The latest state is shown. Review it and try again.')).toBeVisible();
+  await setup.getByRole('button', {name: 'Create Replay', exact: true}).click();
+  await expect(page.getByTestId('timeline').locator('details')).toHaveCount(2);
+  await expect(page.getByTestId('draft-progress')).toHaveText('0 / 20 turns');
+});

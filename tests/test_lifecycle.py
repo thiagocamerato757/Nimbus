@@ -357,3 +357,30 @@ def test_replay_follows_the_series_ended_gate_in_both_directions(tmp_path):
         )
         assert response.status_code == 201, response.text
         assert [g["number"] for g in response.json()["games"]] == [1, 2, 3, 3]
+
+
+# Parent ADR-0010 / ADR-0034 (amended 2026-11-27), regression from the third
+# PR #34 review: in an ended Series whose current Game is Voided, starting a Game
+# and replaying it give the same answer, series_ended, never "replay it".
+def test_ended_series_with_voided_current_game_gives_one_answer(tmp_path):
+    with CurrentClient(create_app(data_dir=tmp_path)) as client:
+        created = series(
+            client,
+            series_format={"kind": "best_of", "games": 3},
+            fearless={"lock_reach": "none", "lock_sources": "picks"},
+        )
+        base = f"/api/series/{created['id']}"
+        first = complete_draft(client, created, start(client, created))
+        client.post(base + f"/games/{first['id']}/winner", json={"winner": "A"})
+        second = complete_draft(client, created, start(client, created))
+        third = start(client, created)
+        client.post(base + f"/games/{second['id']}/winner", json={"winner": "A"})
+        saved = client.post(base + f"/games/{third['id']}/void", json={}).json()
+        assert saved["progress"]["can_start_next"] is False
+        for path, body in (
+            ("/games", {"team_a_side": "blue", "first_pick_team": "A"}),
+            (f"/games/{third['id']}/replay", {"draft_choice": "new_draft"}),
+        ):
+            response = client.post(base + path, json=body)
+            assert response.status_code == 409, response.text
+            assert response.json()["detail"]["code"] == "series_ended"

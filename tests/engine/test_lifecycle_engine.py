@@ -206,3 +206,83 @@ def test_live_entry_on_a_voided_game_is_rejected_as_voided(profile, assignments,
     game = Game(id="one", number=1, assignments=assignments, voided=True)
     ban = DraftAction(turn_index=0, team_id=opening_ban_teams[0], kind="ban", character_id=None)
     assert check_entry(settings, profile.catalog, (game,), game, ban) == "game_voided"
+
+
+def decided_series(profile, assignments, character_ids):
+    """Bo3 decided 2–0 for A, then its Game 3 started and Voided."""
+    from nimbus.models import SeriesFormat
+
+    settings = profile.snapshot().model_copy(
+        update={"series_format": SeriesFormat(kind="best_of", games=3)}
+    )
+    one = drafted(profile, assignments, character_ids, winner="A")
+    two = one.model_copy(update={"id": "two", "number": 2})
+    three = Game(id="three", number=3, assignments=assignments, voided=True)
+    return settings, (one, two, three)
+
+
+# Parent ADR-0034 / ADR-0010 (amended 2026-11-27): one ordered next-Game gate
+# serves can_start_next and starting a Game. series_ended comes first, so an
+# ended Series never asks for a Replay it would refuse.
+def test_next_game_gate_is_one_ordered_rule(profile, assignments, character_ids):
+    from nimbus.engine import derive_progress, next_game_block
+
+    settings, games = decided_series(profile, assignments, character_ids)
+    assert next_game_block(settings, games) == "series_ended"
+    undecided = (games[0], games[1].model_copy(update={"winner": "B"}), games[2])
+    assert next_game_block(settings, undecided) == "replay_required"
+    drafting = (games[0], games[1].model_copy(update={"actions": games[1].actions[:1]}))
+    assert next_game_block(settings, drafting) == "draft_incomplete"
+    for case in (games, undecided, drafting, games[:1]):
+        progress = derive_progress(settings, case)
+        assert progress.can_start_next is (next_game_block(settings, case) is None)
+
+
+# Parent ADR-0034 (amended 2026-11-27) at the engine seam: a Replay follows the
+# same gate. While the Series has ended it is refused; un-deciding re-enables it.
+def test_replay_follows_the_ended_gate_at_the_engine(profile, assignments, character_ids):
+    import pytest
+
+    from nimbus.engine import create_replay
+
+    settings, games = decided_series(profile, assignments, character_ids)
+    with pytest.raises(ValueError, match="series_ended"):
+        create_replay(settings, profile.catalog, games, games[2], "r", "new_draft")
+    undecided = (games[0], games[1].model_copy(update={"winner": "B"}), games[2])
+    replay = create_replay(settings, profile.catalog, undecided, games[2], "r", "new_draft")
+    assert replay.number == 3 and replay.replay_of == "three"
+
+
+# Parent #13 AC "The timeline shows … what its record lacks" (amended
+# 2026-11-27): missing lists everything still needed to reach Closed. A stored
+# winner that does not count yet is a note, not a missing item.
+def test_missing_lists_everything_still_needed_to_reach_closed(profile, assignments, character_ids):
+    from nimbus.models import PlayerAssignment
+
+    settings = profile.snapshot()
+    complete = drafted(profile, assignments, character_ids)
+    picks = [a for a in complete.actions if a.kind == "pick"]
+    assigned = tuple(
+        PlayerAssignment(turn_index=a.turn_index, player_id=f"p{a.turn_index}") for a in picks
+    )
+    first_pick = picks[0].turn_index
+    # Drafting with every recorded pick assigned still needs the later picks' Players.
+    partial = complete.model_copy(
+        update={
+            "actions": complete.actions[: first_pick + 1],
+            "player_assignments": assigned[:1],
+            "winner": "A",
+        }
+    )
+
+    def missing(game):
+        return derive_state(settings, profile.catalog, (game,), game).missing
+
+    assert missing(partial) == ("draft", "player_assignments")
+    assert missing(partial.model_copy(update={"winner": None})) == (
+        "draft",
+        "winner",
+        "player_assignments",
+    )
+    assert missing(complete) == ("winner", "player_assignments")
+    assert missing(complete.model_copy(update={"player_assignments": assigned})) == ("winner",)

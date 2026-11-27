@@ -36,6 +36,15 @@ test('records optional First Selection and corrects it without changing turn own
   await entry.locator('summary').click();
   await expect(selection.getByLabel('First Selection holder')).toHaveValue('B');
   await expect(selection.getByLabel('First Selection choice')).toHaveValue('draft_position');
+  // #14 (amended 2026-11-27): a new holder with an untouched choice clears it,
+  // because the stored choice belonged to the other Team.
+  await selection.getByLabel('First Selection holder').selectOption('A');
+  await Promise.all([
+    page.waitForResponse(response => response.url().endsWith('/first-selection') && response.request().method() === 'POST' && response.ok()),
+    selection.getByRole('button', {name: 'Save First Selection'}).click(),
+  ]);
+  await expect(selection.getByLabel('First Selection holder')).toHaveValue('A');
+  await expect(selection.getByLabel('First Selection choice')).toHaveValue('');
   await selection.getByLabel('First Selection holder').selectOption('');
   await selection.getByLabel('First Selection choice').selectOption('');
   await selection.getByRole('button', {name: 'Save First Selection'}).click();

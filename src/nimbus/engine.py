@@ -92,11 +92,11 @@ def derive_progress(settings: RuleSnapshot, games: Sequence[Game]) -> SeriesProg
     counted = [g for g in games if not g.voided]
     # Only a Drafted or Closed Game has a result; a winner left on a Game that
     # returned to Drafting is ignored until its draft is complete again.
-    drafted = [g for g in games if is_drafted_or_closed(settings, g)]
+    with_result = [g for g in games if is_drafted_or_closed(settings, g)]
     score: dict[TeamId, int] = {"A": 0, "B": 0}
-    pending = tuple(g.number for g in drafted if g.winner is None)
+    pending = tuple(g.number for g in with_result if g.winner is None)
     deciding = None
-    for game in drafted:
+    for game in with_result:
         if game.winner is not None:
             score[game.winner] += 1
             if deciding is None and score[game.winner] >= settings.series_format.games // 2 + 1:
@@ -107,18 +107,52 @@ def derive_progress(settings: RuleSnapshot, games: Sequence[Game]) -> SeriesProg
     else:
         deciding = None
         past = ()
-        ended = len(drafted) >= settings.series_format.games
-    # After a Voided Game the next Game is always its Replay (ADR-0034, amended).
-    current = current_game(games)
-    ready = current is None or is_drafted_or_closed(settings, current)
+        ended = len(with_result) >= settings.series_format.games
     return SeriesProgress(
         score=score,
         pending_results=pending,
         ended=ended,
         deciding_game=deciding,
         games_past_decision=past,
-        can_start_next=ready and not ended and len(counted) < settings.series_format.games,
+        can_start_next=_next_game_block(settings, games, ended) is None,
     )
+
+
+def next_game_block(settings: RuleSnapshot, games: Sequence[Game]) -> str | None:
+    """Why the next ordinary Game cannot start, or None when it can.
+
+    This one ordered gate gives ``can_start_next`` and the start route their
+    answer (ADR-0010, ADR-0034, amended 2026-11-27). An ended Series comes
+    first, so it never asks for a Replay that the same gate would refuse.
+    """
+    return _next_game_block(settings, games, derive_progress(settings, games).ended)
+
+
+def _next_game_block(settings: RuleSnapshot, games: Sequence[Game], ended: bool) -> str | None:
+    if ended:
+        return "series_ended"
+    current = current_game(games)
+    if current is not None and current.voided:
+        return "replay_required"
+    if current is not None and not is_drafted_or_closed(settings, current):
+        return "draft_incomplete"
+    if sum(not g.voided for g in games) >= settings.series_format.games:
+        return "series_full"
+    return None
+
+
+def replay_block(settings: RuleSnapshot, games: Sequence[Game], source: Game) -> str | None:
+    """Why ``source`` cannot be replayed now, or None when it can.
+
+    A Replay is how the next Game starts after a void, so it follows the same
+    ended gate; only the current Game, when Voided, can be replayed.
+    """
+    if derive_progress(settings, games).ended:
+        return "series_ended"
+    current = current_game(games)
+    if current is None or current.id != source.id or not source.voided:
+        return "replay_unavailable"
+    return None
 
 
 def _base_state(
@@ -151,13 +185,18 @@ def _base_state(
     }
     index = len(game.actions)
     complete = draft_complete(settings, game)
+    # Everything still needed to reach Closed: every pick turn in the Draft
+    # Order, recorded or not, needs its Player Assignment. A stored winner that
+    # does not count yet is shown as a note, not as missing (amended 2026-11-27).
     assigned = {a.turn_index for a in game.player_assignments}
+    recorded_picks = {a.turn_index for a in game.actions if a.kind == "pick"}
+    pick_turns = {i for i, t in enumerate(settings.draft_order.turns) if t.kind == "pick"}
     missing = []
     if not complete:
         missing.append("draft")
     if game.winner is None:
         missing.append("winner")
-    if any(a.kind == "pick" and a.turn_index not in assigned for a in game.actions):
+    if not pick_turns <= assigned & recorded_picks:
         missing.append("player_assignments")
     next_turn = None
     if index < len(settings.draft_order.turns) and not game.voided:
@@ -480,8 +519,9 @@ def create_replay(
     The First Selection holder is left for the caller to record as the analyst
     sent it; a pre-fill is for display only and is never applied here.
     """
-    if not games or games[-1].id != source.id or not source.voided:
-        raise ValueError("replay_unavailable")
+    error = replay_block(settings, games, source)
+    if error is not None:
+        raise ValueError(error)
     if choice not in {"copy_draft", "new_draft"}:
         raise ValueError("replay_choice_required")
     template = prefill or source
