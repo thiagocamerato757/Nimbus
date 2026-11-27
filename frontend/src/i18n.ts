@@ -1,5 +1,13 @@
 // All interface copy is keyed here; profile and user-entered names are data.
 const en = {
+  selectionHolder: 'First Selection holder', selectionChoice: 'First Selection choice',
+  noSelectionHolder: 'No holder recorded', noSelectionChoice: 'No choice recorded',
+  choseSide: 'Chose Side', chosePosition: 'Chose Draft Position', saveSelection: 'Save First Selection',
+  selectionForGame: 'First Selection for Game {number}',
+  selectionHint: 'Optional: record who held First Selection and what they chose. The recorded Draft Positions determine turn order.',
+  coupledSetupHint: 'This Series couples Side and Draft Position. The first-pick Side determines Draft Position.',
+  coupled_position: 'The recorded Side and Draft Position must follow this Series’ coupled Side settings.',
+
   replaySetup: 'Replay setup', replayGame: 'Replay Game {number}', createReplay: 'Create Replay',
   replayChoice: 'Draft for the Replay', copyDraft: 'Copy the voided Game’s draft', newDraft: 'New draft',
   replayPatch: 'Replay Patch', replaySide: 'Replay Team A Side', replayFirst: 'Replay First-pick Team',

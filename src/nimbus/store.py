@@ -60,7 +60,7 @@ class Store:
         with self.connection() as connection:
             connection.execute("PRAGMA journal_mode=WAL")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version in (1, 2, 3, 4, 5, 6, 7):
+            if version in (1, 2, 3, 4, 5, 6, 7, 8):
                 self.create_backup("migration")
             if version == 0:
                 migration = Path(__file__).with_name("migrations") / "001_initial.sql"
@@ -140,7 +140,15 @@ class Store:
                         connection.execute("PRAGMA foreign_keys=ON")
                 else:
                     connection.execute("PRAGMA user_version = 8")
-            elif version != 8:
+                version = 8
+            if version == 8:
+                columns = {row[1] for row in connection.execute("PRAGMA table_info(games)")}
+                if "first_selection_holder" not in columns:
+                    migration = Path(__file__).with_name("migrations") / "009_first_selection.sql"
+                    connection.executescript("BEGIN;\n" + migration.read_text() + "\nCOMMIT;")
+                else:
+                    connection.execute("PRAGMA user_version = 9")
+            elif version != 9:
                 raise RuntimeError(f"Unsupported Nimbus database schema: {version}")
 
     @contextmanager
@@ -239,6 +247,8 @@ class Store:
                             )
                             for team in team_ids
                         },
+                        first_selection_holder=game["first_selection_holder"],
+                        first_selection_choice=game["first_selection_choice"],
                         patch=game["patch"],
                         winner=game["winner"],
                         voided=bool(game["voided"]),
@@ -293,10 +303,18 @@ class Store:
                 ),
             )
 
+            self.save_first_selection(game)
             for action in game.actions:
                 self.add_action(game.id, action, game)
             for team_id, players in game.lineups.items():
                 self.save_lineup(game.id, team_id, players)
+
+    def save_first_selection(self, game: Game) -> None:
+        with self.connection() as connection:
+            connection.execute(
+                "UPDATE games SET first_selection_holder = ?, first_selection_choice = ? WHERE id = ?",
+                (game.first_selection_holder, game.first_selection_choice, game.id),
+            )
 
     def save_winner(self, game_id: str, winner: str | None) -> None:
         with self.connection() as connection:

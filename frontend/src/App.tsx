@@ -3,6 +3,7 @@ import { ApiError, request, requestSnapshot } from './api';
 import { useLiveQuery } from './useLiveQuery';
 import { errorText, t } from './i18n';
 import { Rosters, GamePlayers } from './Players';
+import { FirstSelectionFields } from './FirstSelection';
 import type { Player, RosterTeam, Game, Profile, Series, TeamId, Fearless } from './types';
 
 export default function App() {
@@ -38,6 +39,8 @@ export default function App() {
   const [recordType, setRecordType] = useState('official');
   const [side, setSide] = useState('');
   const [firstPick, setFirstPick] = useState<TeamId>('A');
+  const [selectionHolder, setSelectionHolder] = useState<TeamId | '' | undefined>(undefined);
+  const [selectionChoice, setSelectionChoice] = useState('');
   const [character, setCharacter] = useState('');
   const [search, setSearch] = useState('');
   const [rejectedRule, setRejectedRule] = useState('');
@@ -45,7 +48,7 @@ export default function App() {
   const [overrideNote, setOverrideNote] = useState('');
   const [correction, setCorrection] = useState<{ game: string; turn: number; character: string } | null>(null);
   const [winnerPrompt, setWinnerPrompt] = useState(false);
-  const [replay, setReplay] = useState<{ source: string; choice: '' | 'copy_draft' | 'new_draft'; side: string; first: TeamId; patch: string; lineups: Record<TeamId, string[]>; version: string } | null>(null);
+  const [replay, setReplay] = useState<{ source: string; choice: '' | 'copy_draft' | 'new_draft'; side: string; first: TeamId; patch: string; lineups: Record<TeamId, string[]>; version: string; holder?: TeamId | ''; selectionChoice?: string } | null>(null);
   const [replayPreview, setReplayPreview] = useState<Game | null>(null);
   const [promptWinner, setPromptWinner] = useState<TeamId>('A');
   const profile = profiles.find(p => p.id === (series?.profile_id ?? profileId));
@@ -61,6 +64,13 @@ export default function App() {
     : creationProfile?.fearless_presets.find(p => p.id === chosenVariant);
   const invalidCombination = chosenFearless?.lock_reach === 'picking_team' && chosenFearless?.lock_sources === 'picks_and_bans';
   const displayFormat = series?.rule_snapshot.series_format;
+  const seriesSides = series?.rule_snapshot.sides ?? profile?.sides ?? [];
+  const setupFirst = series?.rule_snapshot.sides_coupled
+    ? (side === series.rule_snapshot.first_pick_side ? 'A' : 'B') : firstPick;
+  useEffect(() => {
+    setSelectionHolder(undefined); setSelectionChoice('');
+  }, [series?.id, current?.id]);
+  useEffect(() => { setSide(seriesSides[0] ?? ''); }, [series?.id]);
 
   async function load() {
     setLoading(true); setError('');
@@ -80,6 +90,8 @@ export default function App() {
     requestSnapshot<Game>(`/series/${series.id}/games/${replay.source}/replay-preview`, {
       draft_choice: replay.choice, team_a_side: replay.side, first_pick_team: replay.first,
       patch: replay.patch || null, lineups: replay.lineups,
+      ...(replay.holder !== undefined ? {first_selection_holder: replay.holder || null} : {}),
+      first_selection_choice: replay.selectionChoice || null,
     }, replay.version).then(result => { if (active) { setReplayPreview(result.data); setError(''); } })
       .catch(e => { if (active) setError(errorText(e instanceof ApiError ? e.code : 'unexpected')); });
     return () => { active = false; };
@@ -177,7 +189,9 @@ export default function App() {
       expectedVersion = result.version;
       if (!result.data.progress.can_start_next) { setWinnerPrompt(false); return; }
     }
-    const result = await save(`/series/${series.id}/games`, { team_a_side: side, first_pick_team: firstPick, patch: gamePatch || series.patch }, expectedVersion);
+    const result = await save(`/series/${series.id}/games`, { team_a_side: side, first_pick_team: setupFirst, patch: gamePatch || series.patch,
+      ...(selectionHolder !== undefined ? {first_selection_holder: selectionHolder || null} : {}),
+      first_selection_choice: selectionChoice || null }, expectedVersion);
     if (result) setWinnerPrompt(false);
   }
   function record(event: FormEvent) {
@@ -292,12 +306,15 @@ export default function App() {
             const result = await save(`/series/${series.id}/games/${replay.source}/replay`, {
               draft_choice: replay.choice, team_a_side: replay.side, first_pick_team: replay.first,
               patch: replay.patch || null, lineups: replay.lineups,
+              ...(replay.holder !== undefined ? {first_selection_holder: replay.holder || null} : {}),
+              first_selection_choice: replay.selectionChoice || null,
             }, replay.version);
             if (result) setReplay(null);
           }}>
             <label>{t('replayPatch')}<input maxLength={100} value={replay.patch} onChange={e => setReplay({...replay, patch: e.target.value})} /></label>
-            <label>{t('replaySide')}<select value={replay.side} onChange={e => setReplay({...replay, side: e.target.value})}>{profile?.sides.map(side => <option key={side} value={side}>{side}</option>)}</select></label>
-            <label>{t('replayFirst')}<select value={replay.first} onChange={e => setReplay({...replay, first: e.target.value as TeamId})}>{series.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+            <label>{t('replaySide')}<select value={replay.side} onChange={e => setReplay({...replay, side: e.target.value, first: series.rule_snapshot.sides_coupled ? (e.target.value === series.rule_snapshot.first_pick_side ? 'A' : 'B') : replay.first})}>{seriesSides.map(side => <option key={side} value={side}>{side}</option>)}</select></label>
+            <label>{t('replayFirst')}<select value={replay.first} disabled={series.rule_snapshot.sides_coupled} onChange={e => setReplay({...replay, first: e.target.value as TeamId})}>{series.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+            <FirstSelectionFields teams={series.teams} holder={replay.holder ?? current.first_selection_prefill ?? ''} choice={replay.selectionChoice ?? ''} onHolder={holder => setReplay({...replay, holder})} onChoice={selectionChoice => setReplay({...replay, selectionChoice})} />
             {series.teams.map(team => <label key={team.id}>{t('replayLineup', {team: team.name})}<select multiple value={replay.lineups[team.id]} onChange={e => setReplay({...replay, lineups: {...replay.lineups, [team.id]: [...e.target.selectedOptions].map(option => option.value)}})}>
               {players.filter(player => player.current_team_id === team.roster_id || current.lineups[team.id].includes(player.id)).map(player => <option key={player.id} value={player.id}>{player.name}</option>)}
             </select></label>)}
@@ -376,12 +393,14 @@ export default function App() {
           <p className="lock-footnote">{t('lockHint')}</p>
         </>}
         {series.progress.can_start_next ? <section className="next-game panel">
-          <div><h2>{t('gameSetup')}</h2><p className="muted">{t('gameSetupHint')}</p></div>
+          <div><h2>{t('gameSetup')}</h2><p className="muted">{t(series.rule_snapshot.sides_coupled ? 'coupledSetupHint' : 'gameSetupHint')}</p></div>
           <form onChangeCapture={() => setEditVersion(previous => previous ?? version)} onSubmit={start} className="next-game-form">
             <label>{t('sideFor', { team: teamName('A') })}<select value={side} onChange={e => setSide(e.target.value)}>
-              {profile?.sides.map(value => <option key={value} value={value}>{value === 'blue' || value === 'red' ? t(value) : value}</option>)}</select></label>
-            <label>{t('firstPick')}<select value={firstPick} onChange={e => setFirstPick(e.target.value as TeamId)}>
+              {seriesSides.map(value => <option key={value} value={value}>{value === 'blue' || value === 'red' ? t(value) : value}</option>)}</select></label>
+            <label>{t('firstPick')}<select aria-label={t('firstPick')} value={setupFirst} disabled={series.rule_snapshot.sides_coupled} onChange={e => setFirstPick(e.target.value as TeamId)}>
               {series.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+            <FirstSelectionFields teams={series.teams} holder={selectionHolder ?? series.next_first_selection_holder ?? ''} choice={selectionChoice} onHolder={setSelectionHolder} onChoice={setSelectionChoice} />
+            <p className="muted">{t('selectionHint')}</p>
             <label>{t('gamePatch')}<input value={gamePatch} placeholder={series.patch ?? ''} onChange={e => setGamePatch(e.target.value)} maxLength={100} /></label>
             <button className="primary" disabled={busy}>{t('startGame', { number: Math.max(0, ...series.games.map(game => game.number)) + 1 })}</button>
           </form>
@@ -397,6 +416,19 @@ export default function App() {
               <label>{t('winner')}<select aria-label={t('winner')} name="winner" defaultValue={game.winner ?? ''}><option value="">{t('resultPending')}</option>{series.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
               <button disabled={busy}>{t('saveWinner')}</button>
             </form>
+            <section aria-label={t('selectionForGame', {number: game.number})}>
+              <form key={`${game.id}-${game.first_selection_holder}-${game.first_selection_choice}`}
+                onChangeCapture={() => setEditVersion(previous => previous ?? version)} onSubmit={event => {
+                  event.preventDefault(); const fields = new FormData(event.currentTarget);
+                  void save(`/series/${series.id}/games/${game.id}/first-selection`, {
+                    first_selection_holder: fields.get('first_selection_holder') || null,
+                    first_selection_choice: fields.get('first_selection_choice') || null,
+                  });
+                }}>
+                <FirstSelectionFields teams={series.teams} holder={game.first_selection_holder ?? ''} choice={game.first_selection_choice ?? ''} />
+                <button disabled={busy}>{t('saveSelection')}</button>
+              </form>
+            </section>
             {!game.voided && <button disabled={busy} onClick={() => void save(`/series/${series.id}/games/${game.id}/void`, {})}>{t('voidGame')}</button>}
             {game.id !== current?.id && profile && <GamePlayers game={game} series={series} profile={profile} players={players} busy={busy}
               onEdit={() => setEditVersion(previous => previous ?? version)} onSave={async (path, body) => { await save(path, body); }} />}

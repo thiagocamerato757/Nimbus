@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 from nimbus.models import (
     Acknowledgement,
+    Assignment,
     CarriedAcknowledgement,
     Character,
     DraftAction,
@@ -22,6 +23,46 @@ from nimbus.models import (
     TeamId,
     Violation,
 )
+
+
+def game_assignments(
+    settings: RuleSnapshot, team_a_side: str, first_pick_team: TeamId
+) -> tuple[Assignment, ...]:
+    """Record the two results independently unless the snapshot couples them."""
+    if settings.sides is None or team_a_side not in settings.sides:
+        raise ValueError("unknown_side")
+    if settings.sides_coupled:
+        expected = "A" if team_a_side == settings.first_pick_side else "B"
+        if first_pick_team != expected:
+            raise ValueError("coupled_position")
+    teams: tuple[TeamId, TeamId] = ("A", "B")
+    return tuple(
+        Assignment(
+            team_id=team,
+            side=team_a_side
+            if team == "A"
+            else next(s for s in settings.sides if s != team_a_side),
+            position="first" if team == first_pick_team else "second",
+        )
+        for team in teams
+    )
+
+
+def first_selection_prefill(
+    settings: RuleSnapshot, games: Sequence[Game], number: int
+) -> TeamId | None:
+    """Offer editable metadata from the previous logical Game, never a ruling."""
+    previous = next((g for g in reversed(games) if g.number == number - 1 and not g.voided), None)
+    if previous is None or previous.winner is None:
+        return None
+    policy = settings.default_first_selection_holder
+    if policy == "winner":
+        return previous.winner
+    if policy == "loser":
+        return "B" if previous.winner == "A" else "A"
+    if policy == "alternate" and previous.first_selection_holder is not None:
+        return "B" if previous.first_selection_holder == "A" else "A"
+    return None
 
 
 def derive_progress(settings: RuleSnapshot, games: Sequence[Game]) -> SeriesProgress:
@@ -382,6 +423,7 @@ def create_replay(
         id=identifier,
         number=source.number,
         replay_of=source.id,
+        first_selection_holder=first_selection_prefill(settings, games, source.number),
         assignments=template.assignments,
         patch=template.patch,
         lineups=template.lineups,

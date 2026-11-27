@@ -11,6 +11,11 @@ writeFileSync(join(profiles, 'warning.rules.yaml'), normal
   .replace('id: league-of-legends', 'id: warning')
   .replace('name: League of Legends', 'name: Warning test profile')
   .replace('banning_locked: reject', 'banning_locked: warn'));
+writeFileSync(join(profiles, 'selection.rules.yaml'), normal
+  .replace('id: league-of-legends', 'id: selection-fixture')
+  .replace('name: League of Legends', 'name: Coupled selection fixture')
+  .replace('sides_coupled: false', 'sides_coupled: true\nfirst_pick_side: red')
+  .replace('default_first_selection_holder: none', 'default_first_selection_holder: loser'));
 export default defineConfig({
   testDir: './e2e', workers: 1, fullyParallel: false,
   use: { baseURL: 'http://127.0.0.1:5173', trace: 'retain-on-failure' },

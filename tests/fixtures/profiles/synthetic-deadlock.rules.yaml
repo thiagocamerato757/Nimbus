@@ -8,6 +8,7 @@ character_pool_label: Hero Pool
 catalog_file: synthetic-deadlock.catalog.yaml
 sides: [amber, sapphire]
 sides_coupled: false
+default_first_selection_holder: none
 default_draft_order: synthetic-six-player
 draft_orders:
   - id: synthetic-six-player

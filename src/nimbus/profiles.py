@@ -15,7 +15,15 @@ from pydantic import (
     model_validator,
 )
 
-from nimbus.models import Character, DraftOrder, Fearless, RuleSettings, RuleSnapshot, SeriesFormat
+from nimbus.models import (
+    Character,
+    DraftOrder,
+    Fearless,
+    FirstSelectionDefault,
+    RuleSettings,
+    RuleSnapshot,
+    SeriesFormat,
+)
 
 Name = Annotated[str, StringConstraints(strict=True, strip_whitespace=True, min_length=1)]
 
@@ -59,6 +67,8 @@ class TitleProfile(BaseModel):
     character_pool_label: Name
     sides: tuple[Name, Name]
     sides_coupled: StrictBool
+    first_pick_side: Name | None = None
+    default_first_selection_holder: FirstSelectionDefault = "none"
     draft_orders: Annotated[tuple[ProfileDraftOrder, ...], Field(min_length=1)]
     default_draft_order: Name
     rule_settings: ProfileRuleSettings
@@ -80,6 +90,10 @@ class TitleProfile(BaseModel):
             raise ValueError("default_fearless must name a Fearless preset")
         if self.sides[0] == self.sides[1]:
             raise ValueError("sides must have two distinct names")
+        if self.sides_coupled and self.first_pick_side not in self.sides:
+            raise ValueError("coupled Sides require first_pick_side naming a Side")
+        if self.first_pick_side is not None and self.first_pick_side not in self.sides:
+            raise ValueError("first_pick_side must name a Side")
         ids = [order.id for order in self.draft_orders]
         if len(ids) != len(set(ids)):
             raise ValueError("duplicate Draft Order id")
@@ -98,6 +112,10 @@ class TitleProfile(BaseModel):
     def snapshot(self) -> RuleSnapshot:
         order = next(order for order in self.draft_orders if order.id == self.default_draft_order)
         return RuleSnapshot(
+            sides=self.sides,
+            sides_coupled=self.sides_coupled,
+            first_pick_side=self.first_pick_side,
+            default_first_selection_holder=self.default_first_selection_holder,
             draft_order=order,
             rule_settings=self.rule_settings,
             series_format=self.default_series_format,

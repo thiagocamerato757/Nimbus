@@ -14,6 +14,8 @@ from nimbus.engine import (
     create_replay,
     derive_progress,
     derive_state,
+    first_selection_prefill,
+    game_assignments,
     record_entry,
 )
 from nimbus.local_access import LocalAccess
@@ -75,13 +77,18 @@ class EditPlayer(Request):
     current_team_id: str | None = None
 
 
-class StartGame(Request):
+class FirstSelection(Request):
+    first_selection_holder: TeamId | None = None
+    first_selection_choice: Literal["side", "draft_position"] | None = None
+
+
+class StartGame(FirstSelection):
     patch: str | None = Field(default=None, max_length=100)
     team_a_side: str
     first_pick_team: TeamId
 
 
-class ReplayGame(Request):
+class ReplayGame(FirstSelection):
     draft_choice: Literal["copy_draft", "new_draft"]
     team_a_side: str | None = None
     first_pick_team: TeamId | None = None
@@ -162,6 +169,9 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
             GameView(
                 **game.model_dump(),
                 state=derive_state(series.rule_snapshot, catalog, series.games, game),
+                first_selection_prefill=first_selection_prefill(
+                    series.rule_snapshot, series.games, game.number
+                ),
             )
             for game in series.games
         )
@@ -169,6 +179,11 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
             **series.model_dump(exclude={"games"}),
             games=games,
             progress=derive_progress(series.rule_snapshot, series.games),
+            next_first_selection_holder=first_selection_prefill(
+                series.rule_snapshot,
+                series.games,
+                max((g.number for g in series.games), default=0) + 1,
+            ),
         )
 
     def check_team(team_id: str | None) -> None:
@@ -299,6 +314,18 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
     def get_series(identifier: str) -> SeriesView:
         return view(read(identifier))
 
+    def setup_assignments(series: Series, side: str, first: TeamId) -> tuple[Assignment, ...]:
+        settings = series.rule_snapshot
+        # Historical snapshots predate configurable Side/First Selection settings.
+        if settings.sides is None:
+            settings = settings.model_copy(update={"sides": profiles()[series.profile_id].sides})
+        try:
+            return game_assignments(settings, side, first)
+        except ValueError as error:
+            raise reject(
+                str(error), "Choose Side and Draft Position from the Series rules.", 422
+            ) from None
+
     @app.post("/api/series/{identifier}/games", status_code=201)
     def start_game(identifier: str, request: StartGame) -> SeriesView:
         series = read(identifier)
@@ -317,22 +344,22 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
             raise reject("series_full", "All Games in this Series Format have been started.")
         if derive_progress(series.rule_snapshot, series.games).ended:
             raise reject("series_ended", "The Series has reached its deciding Game.")
-        if request.team_a_side not in profile.sides:
-            raise reject("unknown_side", "Choose a Side from the Title profile.", 422)
-        other_side = next(side for side in profile.sides if side != request.team_a_side)
-        assignments = tuple(
-            Assignment(
-                team_id=team.id,
-                side=request.team_a_side if team.id == "A" else other_side,
-                position="first" if team.id == request.first_pick_team else "second",
-            )
-            for team in series.teams
-        )
+        assignments = setup_assignments(series, request.team_a_side, request.first_pick_team)
         game = Game(
             id=uuid4().hex,
             number=max((g.number for g in series.games), default=0) + 1,
             lineups=series.games[-1].lineups if series.games else {"A": (), "B": ()},
             assignments=assignments,
+            first_selection_holder=(
+                request.first_selection_holder
+                if "first_selection_holder" in request.model_fields_set
+                else first_selection_prefill(
+                    series.rule_snapshot,
+                    series.games,
+                    max((g.number for g in series.games), default=0) + 1,
+                )
+            ),
+            first_selection_choice=request.first_selection_choice,
             patch=request.patch if request.patch is not None else series.patch,
         )
         store.add_game(identifier, game)
@@ -349,11 +376,11 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
         source = find_game(series, game_id)
         profile = profiles()[series.profile_id]
         side = request.team_a_side or next(a.side for a in source.assignments if a.team_id == "A")
-        first = request.first_pick_team or next(
-            a.team_id for a in source.assignments if a.position == "first"
+        first: TeamId = (
+            request.first_pick_team
+            if request.first_pick_team is not None
+            else next(a.team_id for a in source.assignments if a.position == "first")
         )
-        if side not in profile.sides:
-            raise reject("unknown_side", "Choose a Side from the Title profile.", 422)
         lineups = request.lineups if request.lineups is not None else source.lineups
         if set(lineups) != {"A", "B"}:
             raise reject("invalid_lineup_size", "Both Team Lineups are required.", 422)
@@ -378,14 +405,7 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
                         "player_on_other_lineup", "A Player can play for only one Team in a Game."
                     )
                 seen.add(player_id)
-        assignments = tuple(
-            Assignment(
-                team_id=t.id,
-                side=side if t.id == "A" else next(s for s in profile.sides if s != side),
-                position="first" if t.id == first else "second",
-            )
-            for t in series.teams
-        )
+        assignments = setup_assignments(series, side, first)
         prefill = source.model_copy(
             update={
                 "assignments": assignments,
@@ -408,6 +428,13 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
                 str(error),
                 "Replay must preserve Structural Invariants and follow the latest Voided attempt.",
             ) from None
+        replay = replay.model_copy(
+            update={
+                name: getattr(request, name)
+                for name in ("first_selection_holder", "first_selection_choice")
+                if name in request.model_fields_set
+            }
+        )
         return series, replay
 
     @app.post("/api/series/{identifier}/games/{game_id}/replay-preview")
@@ -427,6 +454,12 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
     def replay_game(identifier: str, game_id: str, request: ReplayGame) -> SeriesView:
         _, replay = replay_candidate(identifier, game_id, request)
         store.add_game(identifier, replay)
+        return view(read(identifier))
+
+    @app.post("/api/series/{identifier}/games/{game_id}/first-selection")
+    def edit_first_selection(identifier: str, game_id: str, request: FirstSelection) -> SeriesView:
+        game = find_game(read(identifier), game_id)
+        store.save_first_selection(game.model_copy(update=request.model_dump()))
         return view(read(identifier))
 
     @app.post("/api/series/{identifier}/games/{game_id}/winner")

@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 TeamId = Literal["A", "B"]
 Position = Literal["first", "second"]
 ActionKind = Literal["ban", "pick"]
+FirstSelectionDefault = Literal["none", "loser", "winner", "alternate"]
 
 
 class Value(BaseModel):
@@ -69,6 +70,10 @@ class SeriesFormat(Value):
 
 
 class RuleSnapshot(Value):
+    sides: tuple[str, str] | None = None
+    sides_coupled: bool = False
+    first_pick_side: str | None = None
+    default_first_selection_holder: FirstSelectionDefault = "none"
     draft_order: DraftOrder
     rule_settings: RuleSettings
     fearless: Fearless = Fearless()
@@ -161,6 +166,8 @@ def empty_lineups() -> dict[TeamId, tuple[str, ...]]:
 
 
 class Game(Value):
+    first_selection_holder: TeamId | None = None
+    first_selection_choice: Literal["side", "draft_position"] | None = None
     replay_of: str | None = None
     winner: TeamId | None = None
     voided: bool = False
@@ -206,6 +213,7 @@ class DraftState(Value):
 
 
 class GameView(Game):
+    first_selection_prefill: TeamId | None = None
     state: DraftState
 
 
@@ -219,5 +227,6 @@ class SeriesProgress(Value):
 
 
 class SeriesView(Series):
+    next_first_selection_holder: TeamId | None = None
     progress: SeriesProgress
     games: tuple[GameView, ...] = ()
