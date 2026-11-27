@@ -10,3 +10,7 @@ Nimbus records what happened on stage, which can contradict the rules it knows b
 ## Amendment (2026-11-26): what an acknowledgement covers
 
 An acknowledgement stores a fingerprint of the rule, the action and the cause. The Violation is Acknowledged while they match it, and Open if any of them differs and a rule is still broken. If all three match exactly again, for example after a correction is reversed, the acknowledgement applies again. A correction followed by its reversal therefore restores the same derived state.
+
+## Amendment (2026-11-27): duplicate occurrence and correction feedback
+
+When the Series' rules prohibit the same Character more than once in a Game, every occurrence after the first in Draft Order carries the duplicate Violation, regardless of which action was edited or when it was entered. The first occurrence does not carry that duplicate Violation. Saving a correction that creates a Violation on another action immediately explains the affected action, for example, "This correction makes turn 10 a duplicate", so the analyst can connect the edit to the untouched action now flagged.

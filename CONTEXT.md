@@ -133,6 +133,9 @@ A Game whose draft is complete but whose winner has not been recorded.
 **Voided Game**:
 A Game that was abandoned or remade. By default its Draft Actions do not count for Fearless.
 
+**Replay**:
+A new Game in the same Series that repeats a Voided Game, shares its Game number and remains linked to it. The Voided Game keeps its own record.
+
 **Side**:
 The half of the map a Team plays on in a Game, such as blue or red in League of Legends. It does not determine Draft Position.
 _Avoid_: Draft side

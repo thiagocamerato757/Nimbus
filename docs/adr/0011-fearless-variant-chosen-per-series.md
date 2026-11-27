@@ -12,3 +12,7 @@ Supersedes the part of [ADR 0001](0001-title-agnostic-engine.md) saying that the
 ## Amendment (2026-11-26): picking Team with bans is not valid
 
 Lock reach "picking Team" together with lock sources "picks and bans" is rejected with a clear error when a Custom variant is validated. No known format uses it, and inventing which Team a ban locks the Character for risks getting it wrong. Reach "both Teams" with bans stays allowed, since the lock is unambiguous. Revisit when a real format needs it.
+
+## Amendment (2026-11-27): Locks apply only to higher Game numbers
+
+A Game can produce Fearless Locks only for Games with a higher Game number in the same Series. This also applies when the snapshot counts Voided Games: a voided attempt can lock Characters for following Game numbers, but never against its same-number Replay. This preserves the meaning of a replay that copies picks and bans while still burning those Characters for following Games; see [ADR 0034](0034-replay-keeps-the-voided-game-record.md).
