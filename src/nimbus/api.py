@@ -22,6 +22,8 @@ from nimbus.models import (
     Game,
     GameView,
     OverrideReason,
+    Player,
+    RosterTeam,
     Series,
     SeriesFormat,
     SeriesView,
@@ -41,12 +43,34 @@ class CreateSeries(Request):
     profile_id: str
     team_a: str = Field(min_length=1, max_length=100)
     team_b: str = Field(min_length=1, max_length=100)
+    team_a_id: str | None = None
+    team_b_id: str | None = None
     our_team: TeamId | None = None
     draft_order_id: str | None = None
     series_format: SeriesFormat | None = None
     fearless: Fearless | None = None
     patch: str | None = Field(default=None, max_length=100)
     record_type: Literal["official", "scrim"] = "official"
+
+
+class EditPlayerAssignment(Request):
+    turn_index: int = Field(strict=True, ge=0)
+    player_id: str | None
+
+
+class EditLineup(Request):
+    team_id: TeamId
+    player_ids: tuple[str, ...]
+
+
+class EditPool(Request):
+    character_ids: tuple[str, ...]
+
+
+class EditPlayer(Request):
+    name: str = Field(min_length=1, max_length=100)
+    usual_role: str | None = Field(default=None, max_length=100)
+    current_team_id: str | None = None
 
 
 class StartGame(Request):
@@ -99,6 +123,9 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
                 for action in (edit.before, edit.after)
                 if action is not None and action.character_id is not None
             )
+        for player in store.list_players():
+            for profile_id, character_ids in player.declared_pools.items():
+                references.setdefault(profile_id, set()).update(character_ids)
         loaded_profiles = load_profiles(profile_dir, references)
     except ProfileLoadError as error:
         profile_error = error
@@ -125,6 +152,57 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
             for game in series.games
         )
         return SeriesView(**series.model_dump(exclude={"games"}), games=games)
+
+    def check_team(team_id: str | None) -> None:
+        if team_id is not None and not any(t.id == team_id for t in store.list_teams()):
+            raise reject("team_not_found", "Roster Team not found.", 404)
+
+    def find_player(player_id: str) -> Player:
+        player = next((p for p in store.list_players() if p.id == player_id), None)
+        if player is None:
+            raise reject("player_not_found", "Player not found.", 404)
+        return player
+
+    @app.post("/api/series/{identifier}/teams/{team_id}/players/{player_id}/pool")
+    def edit_pool(identifier: str, team_id: TeamId, player_id: str, request: EditPool) -> Player:
+        series = read(identifier)
+        player = find_player(player_id)
+        team = next(t for t in series.teams if t.id == team_id)
+        if series.our_team != team_id or player.current_team_id != team.roster_id:
+            raise reject("pool_not_ours", "Edit Declared Pools for Players on Our Team's Roster.")
+        catalog = profiles()[series.profile_id].catalog
+        if set(request.character_ids) - {c.id for c in catalog if not c.retired}:
+            raise reject("unknown_character", "Choose active Characters from the Catalog.", 422)
+        pools = {
+            **player.declared_pools,
+            series.profile_id: tuple(dict.fromkeys(request.character_ids)),
+        }
+        player = player.model_copy(update={"declared_pools": pools})
+        store.save_player(player)
+        return player
+
+    @app.get("/api/teams")
+    def get_teams() -> list[RosterTeam]:
+        return store.list_teams()
+
+    @app.get("/api/players")
+    def get_players() -> list[Player]:
+        return store.list_players()
+
+    @app.post("/api/players", status_code=201)
+    def create_player(request: EditPlayer) -> Player:
+        check_team(request.current_team_id)
+        player = Player(id=uuid4().hex, **request.model_dump())
+        store.save_player(player)
+        return player
+
+    @app.post("/api/players/{player_id}")
+    def edit_player(player_id: str, request: EditPlayer) -> Player:
+        original = find_player(player_id)
+        check_team(request.current_team_id)
+        player = original.model_copy(update=request.model_dump())
+        store.save_player(player)
+        return player
 
     @app.get("/api/backups")
     def get_backups() -> list[Backup]:
@@ -173,12 +251,26 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
                 "fearless": request.fearless or snapshot.fearless,
             }
         )
+        check_team(request.team_a_id)
+        check_team(request.team_b_id)
+        if request.team_a_id is not None and request.team_a_id == request.team_b_id:
+            raise reject("same_team", "Choose two different Teams.", 422)
+        teams_by_id = {team.id: team for team in store.list_teams()}
+        roster_a = (
+            teams_by_id[request.team_a_id] if request.team_a_id else store.add_team(request.team_a)
+        )
+        roster_b = (
+            teams_by_id[request.team_b_id] if request.team_b_id else store.add_team(request.team_b)
+        )
         series = Series(
             patch=request.patch,
             record_type=request.record_type,
             id=uuid4().hex,
             profile_id=profile.id,
-            teams=(Team(id="A", name=request.team_a), Team(id="B", name=request.team_b)),
+            teams=(
+                Team(id="A", name=roster_a.name, roster_id=roster_a.id),
+                Team(id="B", name=roster_b.name, roster_id=roster_b.id),
+            ),
             our_team=request.our_team,
             rule_snapshot=snapshot,
         )
@@ -218,10 +310,76 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
         game = Game(
             id=uuid4().hex,
             number=len(series.games) + 1,
+            lineups=series.games[-1].lineups if series.games else {"A": (), "B": ()},
             assignments=assignments,
             patch=request.patch if request.patch is not None else series.patch,
         )
         store.add_game(identifier, game)
+        return view(read(identifier))
+
+    def find_game(series: Series, game_id: str) -> Game:
+        game = next((g for g in series.games if g.id == game_id), None)
+        if game is None:
+            raise reject("game_not_found", "Game not found.", 404)
+        return game
+
+    @app.post("/api/series/{identifier}/games/{game_id}/lineups")
+    def edit_lineup(identifier: str, game_id: str, request: EditLineup) -> SeriesView:
+        series = read(identifier)
+        game = find_game(series, game_id)
+        ids = request.player_ids
+        if len(ids) != len(set(ids)) or len(ids) > profiles()[series.profile_id].team_size:
+            raise reject(
+                "invalid_lineup_size", "Choose distinct Players up to the Title's team size.", 422
+            )
+        team = next(t for t in series.teams if t.id == request.team_id)
+        for player_id in ids:
+            player = find_player(player_id)
+            if (
+                player.current_team_id != team.roster_id
+                and player_id not in game.lineups[request.team_id]
+            ):
+                raise reject("player_not_on_roster", "Choose Players from this Team's Roster.")
+            if any(
+                player_id in lineup
+                for key, lineup in game.lineups.items()
+                if key != request.team_id
+            ):
+                raise reject(
+                    "player_on_other_lineup", "A Player can play for only one Team in a Game."
+                )
+        assigned = {a.player_id for a in game.player_assignments}
+        if (set(game.lineups[request.team_id]) - set(ids)) & assigned:
+            raise reject(
+                "assigned_player",
+                "Clear the Player Assignment before removing its Player from the Lineup.",
+            )
+        store.save_lineup(game.id, request.team_id, ids)
+        return view(read(identifier))
+
+    @app.post("/api/series/{identifier}/games/{game_id}/player-assignments")
+    def edit_player_assignment(
+        identifier: str, game_id: str, request: EditPlayerAssignment
+    ) -> SeriesView:
+        series = read(identifier)
+        game = find_game(series, game_id)
+        pick = next(
+            (a for a in game.actions if a.turn_index == request.turn_index and a.kind == "pick"),
+            None,
+        )
+        if pick is None:
+            raise reject("not_a_pick", "Assign Players only to recorded picks.")
+        if request.player_id is not None:
+            if request.player_id not in game.lineups[pick.team_id]:
+                raise reject(
+                    "player_not_in_lineup", "Choose a Player from this Game's Team Lineup."
+                )
+            if any(
+                a.player_id == request.player_id and a.turn_index != pick.turn_index
+                for a in game.player_assignments
+            ):
+                raise reject("player_already_assigned", "Each Player plays one Character per Game.")
+        store.save_player_assignment(game.id, request.turn_index, request.player_id)
         return view(read(identifier))
 
     @app.post("/api/series/{identifier}/games/{game_id}/actions", status_code=201)

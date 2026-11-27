@@ -14,7 +14,16 @@ from uuid import uuid4
 
 from pydantic import BaseModel
 
-from nimbus.models import ActionEdit, DraftAction, Game, Series
+from nimbus.models import (
+    ActionEdit,
+    DraftAction,
+    Game,
+    Player,
+    PlayerAssignment,
+    RosterTeam,
+    Series,
+    TeamId,
+)
 
 
 def default_data_dir() -> Path:
@@ -51,7 +60,7 @@ class Store:
         with self.connection() as connection:
             connection.execute("PRAGMA journal_mode=WAL")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version in (1, 2, 3, 4):
+            if version in (1, 2, 3, 4, 5):
                 self.create_backup("migration")
             if version == 0:
                 migration = Path(__file__).with_name("migrations") / "001_initial.sql"
@@ -85,7 +94,26 @@ class Store:
                     connection.executescript("BEGIN;\n" + migration.read_text() + "\nCOMMIT;")
                 else:
                     connection.execute("PRAGMA user_version = 5")
-            elif version != 5:
+                version = 5
+            if version == 5:
+                migration = Path(__file__).with_name("migrations") / "006_rosters.sql"
+                connection.executescript("BEGIN;\n" + migration.read_text())
+                # Existing Series Teams were local A/B labels, never global identities.
+                for row in connection.execute("SELECT id, teams FROM series").fetchall():
+                    teams = json.loads(row["teams"])
+                    for team in teams:
+                        if team.get("roster_id") is not None:
+                            continue
+                        # Stable across restoring and migrating the same old backup.
+                        team["roster_id"] = f"legacy:{row['id']}:{team['id']}"
+                        connection.execute(
+                            "INSERT INTO roster_teams VALUES (?, ?)",
+                            (team["roster_id"], team["name"]),
+                        )
+                    connection.execute(
+                        "UPDATE series SET teams = ? WHERE id = ?", (json.dumps(teams), row["id"])
+                    )
+            elif version != 6:
                 raise RuntimeError(f"Unsupported Nimbus database schema: {version}")
 
     @contextmanager
@@ -102,6 +130,42 @@ class Store:
         finally:
             connection.close()
 
+    def list_teams(self) -> list[RosterTeam]:
+        with self.connection() as connection:
+            return [
+                RosterTeam(**dict(row))
+                for row in connection.execute("SELECT * FROM roster_teams ORDER BY rowid")
+            ]
+
+    def add_team(self, name: str) -> RosterTeam:
+        team = RosterTeam(id=uuid4().hex, name=name)
+        with self.connection() as connection:
+            connection.execute("INSERT INTO roster_teams VALUES (?, ?)", (team.id, team.name))
+        return team
+
+    def list_players(self) -> list[Player]:
+        with self.connection() as connection:
+            return [
+                Player(**{**dict(row), "declared_pools": json.loads(row["declared_pools"])})
+                for row in connection.execute("SELECT * FROM players ORDER BY rowid")
+            ]
+
+    def save_player(self, player: Player) -> None:
+        with self.connection() as connection:
+            connection.execute(
+                "INSERT INTO players (id, name, usual_role, current_team_id, declared_pools) "
+                "VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET "
+                "name=excluded.name, usual_role=excluded.usual_role, "
+                "current_team_id=excluded.current_team_id, declared_pools=excluded.declared_pools",
+                (
+                    player.id,
+                    player.name,
+                    player.usual_role,
+                    player.current_team_id,
+                    json.dumps(player.declared_pools),
+                ),
+            )
+
     def list_series(self) -> list[Series]:
         with self.connection() as connection:
             identifiers = [
@@ -115,6 +179,7 @@ class Store:
             if row is None:
                 raise KeyError(identifier)
             games = []
+            team_ids: tuple[TeamId, ...] = ("A", "B")
             for game in connection.execute(
                 "SELECT * FROM games WHERE series_id = ? ORDER BY number", (identifier,)
             ):
@@ -128,6 +193,25 @@ class Store:
                 ]
                 games.append(
                     Game(
+                        player_assignments=tuple(
+                            PlayerAssignment.model_validate(dict(row))
+                            for row in connection.execute(
+                                "SELECT turn_index, player_id FROM player_assignments "
+                                "WHERE game_id = ? ORDER BY turn_index",
+                                (game["id"],),
+                            )
+                        ),
+                        lineups={
+                            team: tuple(
+                                row["player_id"]
+                                for row in connection.execute(
+                                    "SELECT player_id FROM lineups WHERE game_id = ? AND team_id = ? "
+                                    "ORDER BY rowid",
+                                    (game["id"], team),
+                                )
+                            )
+                            for team in team_ids
+                        },
                         patch=game["patch"],
                         id=game["id"],
                         number=game["number"],
@@ -175,6 +259,39 @@ class Store:
                     game.patch,
                 ),
             )
+
+            for team_id, players in game.lineups.items():
+                self.save_lineup(game.id, team_id, players)
+
+    def save_lineup(self, game_id: str, team_id: str, players: tuple[str, ...]) -> None:
+        with self.connection() as connection:
+            current = {
+                row["player_id"]
+                for row in connection.execute(
+                    "SELECT player_id FROM lineups WHERE game_id = ? AND team_id = ?",
+                    (game_id, team_id),
+                )
+            }
+            connection.executemany(
+                "DELETE FROM lineups WHERE game_id = ? AND team_id = ? AND player_id = ?",
+                [(game_id, team_id, player) for player in current - set(players)],
+            )
+            connection.executemany(
+                "INSERT INTO lineups VALUES (?, ?, ?)",
+                [(game_id, team_id, player) for player in players if player not in current],
+            )
+
+    def save_player_assignment(self, game_id: str, turn_index: int, player_id: str | None) -> None:
+        with self.connection() as connection:
+            connection.execute(
+                "DELETE FROM player_assignments WHERE game_id = ? AND turn_index = ?",
+                (game_id, turn_index),
+            )
+            if player_id is not None:
+                connection.execute(
+                    "INSERT INTO player_assignments VALUES (?, ?, ?)",
+                    (game_id, turn_index, player_id),
+                )
 
     def add_action(self, game_id: str, action: DraftAction, game: Game) -> None:
         with self.connection() as connection:

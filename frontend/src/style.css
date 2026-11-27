@@ -2,3 +2,13 @@
 
 .backup-notice{overflow-wrap:anywhere;font-size:12px;line-height:1.6;color:var(--muted)}
 .correction-actions{list-style:none;padding:0;border-top:1px solid var(--line)}.correction-actions>li{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 0;border-bottom:1px solid var(--line)}.correction-actions form{width:100%;padding:12px;background:#172b3a;border-radius:6px}.correction-actions button{padding:8px 12px}[data-testid="edit-history"]{margin-top:24px;color:var(--muted)}[data-testid="edit-history"] li{padding:6px 0;line-height:1.6}
+
+.roster-editor, .game-players { margin-block: 1.5rem; padding: 1.5rem; }
+.roster-editor summary { cursor: pointer; font-weight: 600; }
+.people-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 1rem; }
+.people-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+@media(max-width:1000px) { .people-grid { grid-template-columns: 1fr; } }
+.roster-editor form, .game-players form { display: grid; gap: .65rem; margin-block: 1rem; }
+.roster-player { border-block-end: 1px solid var(--border, #394249); padding-bottom: 1rem; }
+.lineup-choice { display: flex; flex-direction: row; align-items: center; gap: .5rem; }
+.lineup-choice input { width: auto; }

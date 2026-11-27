@@ -2,11 +2,18 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { ApiError, request, requestSnapshot } from './api';
 import { useLiveQuery } from './useLiveQuery';
 import { errorText, t } from './i18n';
-import type { Game, Profile, Series, TeamId, Fearless } from './types';
+import { Rosters, GamePlayers } from './Players';
+import type { Player, RosterTeam, Game, Profile, Series, TeamId, Fearless } from './types';
 
 export default function App() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const workspace = useLiveQuery<Series[]>('/series');
+  const people = useLiveQuery<Player[]>('/players');
+  const teams = useLiveQuery<RosterTeam[]>('/teams');
+  const players = people.snapshot?.data ?? [];
+  const rosterTeams = teams.snapshot?.data ?? [];
+  const [teamAId, setTeamAId] = useState('');
+  const [teamBId, setTeamBId] = useState('');
   const seriesList = workspace.snapshot?.data ?? [];
   const version = workspace.snapshot?.version ?? '';
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -69,7 +76,7 @@ export default function App() {
       setCharacter(''); setSearch(''); setOverrideNote('');
       workspace.accept({ data: [updated, ...seriesList.filter(item => item.id !== updated.id)], version: result.version });
       setSelectedId(updated.id); setEditVersion(null); setCorrection(null);
-      void workspace.refresh();
+      await Promise.all([workspace.refresh(), people.refresh(), teams.refresh()]);
     } catch (e) {
       setError(errorText(e instanceof ApiError ? e.code : 'unexpected'));
       if (e instanceof ApiError && ['fearless_lock', 'wasted_ban', 'duplicate_character'].includes(e.code)) setRejectedRule(e.code);
@@ -77,6 +84,24 @@ export default function App() {
         setCharacter(''); setEditVersion(null); setCorrection(null);
         await workspace.refresh();
       }
+    } finally { setBusy(false); }
+  }
+  async function savePlayer(path: string, body: unknown): Promise<boolean> {
+    setBusy(true); setError('');
+    try {
+      const result = await requestSnapshot<Player>(path, body, editVersion ?? people.snapshot?.version ?? version);
+      people.accept({ data: players.some(p => p.id === result.data.id)
+        ? players.map(p => p.id === result.data.id ? result.data : p) : [...players, result.data], version: result.version });
+      setEditVersion(null);
+      await workspace.refresh();
+      await people.refresh();
+      return true;
+    } catch (e) {
+      setError(errorText(e instanceof ApiError ? e.code : 'unexpected'));
+      if (e instanceof ApiError && e.code === 'stale_version') {
+        setEditVersion(null); await workspace.refresh(); await people.refresh();
+      }
+      return false;
     } finally { setBusy(false); }
   }
   async function backup() {
@@ -92,7 +117,7 @@ export default function App() {
   }
   function create(event: FormEvent) {
     event.preventDefault();
-    void save('/series', { profile_id: profileId, team_a: teamA, team_b: teamB, our_team: ourTeam || null,
+    void save('/series', { profile_id: profileId, team_a: teamA, team_b: teamB, team_a_id: teamAId || null, team_b_id: teamBId || null, our_team: ourTeam || null,
       draft_order_id: draftOrder || creationProfile?.default_draft_order, series_format: selectedFormat,
       fearless: chosenFearless, patch: patch || null, record_type: recordType });
   }
@@ -159,7 +184,7 @@ export default function App() {
         </div>
         {series && <div className="badges" data-testid="series-settings"><span>{displayFormat && `${t(displayFormat.kind)} · ${displayFormat.games}`}</span><span className="fearless-badge">{t(series.rule_snapshot.fearless.id)}</span><span>{t(series.record_type)}</span>{series.patch && <span>{series.patch}</span>}</div>}
       </header>
-      {(error || workspace.error) && <div role="alert" className="alert">{error || errorText(workspace.error)}{!profiles.length && <button onClick={() => void load()}>{t('retry')}</button>}</div>}
+      {(error || workspace.error || people.error || teams.error) && <div role="alert" className="alert">{error || errorText(workspace.error || people.error || teams.error)}{!profiles.length && <button onClick={() => void load()}>{t('retry')}</button>}</div>}
       {loading || (!workspace.snapshot && !workspace.error) ? <p role="status">{t('loading')}</p> : !series ? <section className="setup panel">
         <div className="setup-intro"><div className="orbit" aria-hidden="true"><span>N</span></div>
           <h2>{t('setupTitle')}</h2><p>{t('setupDescription')}</p></div>
@@ -167,9 +192,14 @@ export default function App() {
           <label>{t('titleProfile')}<select value={profileId} onChange={event => {
             setProfileId(event.target.value); setDraftOrder(''); setFormatIndex(''); setVariant(''); setSide(profiles.find(p => p.id === event.target.value)?.sides[0] ?? '');
           }}>{profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-          <div className="form-pair"><label>{t('teamA')}<input value={teamA} onChange={e => setTeamA(e.target.value)} required maxLength={100} /></label>
-            <label>{t('teamB')}<input value={teamB} onChange={e => setTeamB(e.target.value)} required maxLength={100} /></label></div>
-          <label>{t('ourTeam')}<select value={ourTeam} onChange={e => setOurTeam(e.target.value)}>
+          <div className="form-pair"><label>{t('teamA')}<input disabled={!!teamAId} value={teamA} onChange={e => setTeamA(e.target.value)} required maxLength={100} /></label>
+            <label>{t('teamB')}<input disabled={!!teamBId} value={teamB} onChange={e => setTeamB(e.target.value)} required maxLength={100} /></label></div>
+          <div className="form-pair">{(['A', 'B'] as const).map(team => <label key={team}>{t(team === 'A' ? 'existingTeamA' : 'existingTeamB')}<select aria-label={t(team === 'A' ? 'existingTeamA' : 'existingTeamB')} value={team === 'A' ? teamAId : teamBId} onChange={e => {
+            const name = rosterTeams.find(t => t.id === e.target.value)?.name ?? '';
+            if (team === 'A') { setTeamAId(e.target.value); setTeamA(name); }
+            else { setTeamBId(e.target.value); setTeamB(name); }
+          }}><option value="">{t('newTeam')}</option>{rosterTeams.map(team => <option value={team.id} key={team.id}>{team.name} · {team.id.slice(-8)}</option>)}</select></label>)}</div>
+          <label>{t('ourTeam')}<select aria-label={t('ourTeam')} value={ourTeam} onChange={e => setOurTeam(e.target.value)}>
             <option value="">{t('neither')}</option><option value="A">{teamA || t('teamA')}</option><option value="B">{teamB || t('teamB')}</option>
           </select></label>
           <label>{t('format')}<select aria-label={t('format')} value={formatIndex || String(creationProfile?.series_formats.findIndex(f => f.kind === creationProfile.default_series_format.kind && f.games === creationProfile.default_series_format.games))} onChange={e => setFormatIndex(e.target.value)}>
@@ -195,6 +225,10 @@ export default function App() {
           <button className="primary" disabled={busy || !profile || invalidCombination}>{busy ? t('saving') : t('create')}</button>
         </form>
       </section> : <>
+        {profile && <Rosters series={series} profile={profile} players={players} busy={busy || Number(people.snapshot?.version ?? -1) < Number(version)}
+          onEdit={() => setEditVersion(previous => previous ?? people.snapshot?.version ?? version)} onSave={savePlayer} />}
+        {current && profile && <GamePlayers game={current} series={series} profile={profile} players={players} busy={busy}
+          current onEdit={() => setEditVersion(previous => previous ?? version)} onSave={save} />}
         <div className="game-strip" aria-label={t('timeline')}>
           {series.games.map(game => <div className={game.id === current?.id ? 'game-step active' : 'game-step'} key={game.id}>
             <span>{t('game', { number: game.number })}</span><small>{game.state.complete ? t('drafted') : t('drafting')}</small>
@@ -263,6 +297,8 @@ export default function App() {
         {!!series.games.length && <section className="timeline" data-testid="timeline"><div className="section-title"><h2>{t('timeline')}</h2><p>{t('timelineHint')}</p></div>
           {series.games.map(game => <details className="timeline-game panel" key={game.id} open={game.id !== current?.id}>
             <summary><strong>{t('game', { number: game.number })}</strong><span>{game.state.complete ? t('drafted') : t('drafting')}</span></summary>
+            {game.id !== current?.id && profile && <GamePlayers game={game} series={series} profile={profile} players={players} busy={busy}
+              onEdit={() => setEditVersion(previous => previous ?? version)} onSave={save} />}
             <div className="timeline-teams">{series.teams.map(team => <div key={team.id}><h3>{team.name}</h3>
               <h4>{t('picks')}</h4>{actionList(game, team.id, 'pick')}<h4>{t('bans')}</h4>{actionList(game, team.id, 'ban')}</div>)}</div>
             {game.id !== current?.id && violationList(game)}

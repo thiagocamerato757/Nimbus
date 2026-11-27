@@ -1,5 +1,22 @@
 // All interface copy is keyed here; profile and user-entered names are data.
 const en = {
+  rosters: 'Rosters and Declared Pools', roster: 'Roster', newPlayer: 'New Player name', playerName: 'Player name',
+  usualRole: 'Usual Role', createPlayer: 'Create Player', savePlayer: 'Save Player', removePlayer: 'Remove from Roster',
+  declaredPool: 'Declared Pool', savePool: 'Save Declared Pool', existingPlayer: 'Existing Player', addPlayer: 'Add to Roster',
+  choosePlayer: 'Choose a Player', playerIdentity: '{name} · {id}', formerMember: 'Former Roster member',
+  lineup: 'Lineup', lineupCount: '{count} / {size} Players', saveLineup: 'Save Lineup',
+  lineupHint: 'An incomplete Lineup can be completed later. Each Game keeps its own Lineup.',
+  playerAssignments: 'Player Assignments', playerForTurn: 'Player for turn {number}',
+  saveAssignment: 'Save Player Assignment', unassigned: 'Unassigned',
+  existingTeamA: 'Existing Team A', existingTeamB: 'Existing Team B', newTeam: 'Create a new Team',
+  player_not_found: 'This Player could not be found.', team_not_found: 'This Team could not be found.',
+  same_team: 'Choose two different Teams.', pool_not_ours: 'Edit Declared Pools for Players on Our Team’s Roster.',
+  invalid_lineup_size: 'Choose distinct Players up to the Title’s team size.',
+  player_not_on_roster: 'Choose Players from this Team’s Roster.', player_on_other_lineup: 'A Player can play for only one Team in a Game.',
+  assigned_player: 'Clear the Player Assignment before removing its Player from the Lineup.',
+  not_a_pick: 'Assign Players only to recorded picks.', player_not_in_lineup: 'Choose a Player from this Game’s Team Lineup.',
+  player_already_assigned: 'Each Player plays one Character per Game.',
+
   correctTurn: 'Correct turn {number}', replacementCharacter: 'Replacement Character',
   saveCorrection: 'Save correction', cancelCorrection: 'Cancel correction', retiredCharacter: '{name} · Retired',
   clearLatest: 'Clear latest Draft Action', editHistory: 'Edit history', cleared: 'Cleared',

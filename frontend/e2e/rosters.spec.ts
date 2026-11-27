@@ -1,0 +1,43 @@
+import { test, expect } from '@playwright/test';
+
+// US-011 / DS-002: coach edits data through the app, including same-name identities.
+test('edits Rosters, Declared Pools, Lineups and Player Assignments in the app', async ({ page }) => {
+  await page.goto('/');
+  await page.getByLabel('Team A name', { exact: true }).fill('Roster Owls');
+  await page.getByLabel('Team B name', { exact: true }).fill('Roster Foxes');
+  await page.getByLabel(/^Our Team/).selectOption('A');
+  await page.getByRole('button', { name: 'Create Series', exact: true }).click();
+  const roster = page.getByTestId('roster-A');
+  await roster.getByLabel('New Player name').fill('Alex');
+  await roster.getByRole('button', { name: 'Create Player' }).click();
+  await expect(roster.getByTestId('roster-player')).toHaveCount(1);
+  await roster.getByLabel('New Player name').fill('Alex');
+  await roster.getByRole('button', { name: 'Create Player' }).click();
+  await expect(roster.getByTestId('roster-player')).toHaveCount(2);
+  const first = roster.getByTestId('roster-player').first();
+  await first.getByLabel('Usual Role').fill('mid');
+  await first.getByRole('button', { name: 'Save Player', exact: true }).click();
+  await first.getByLabel('Declared Pool').selectOption(['Ahri', 'Orianna']);
+  await first.getByRole('button', { name: 'Save Declared Pool' }).click();
+  await expect(first.getByLabel('Declared Pool')).toHaveValues(['Ahri', 'Orianna']);
+  await page.getByRole('button', { name: 'Start Game 1' }).click();
+  const game = page.getByTestId('game-players-current');
+  await game.getByTestId('lineup-A').getByRole('checkbox').first().check();
+  await game.getByTestId('lineup-A').getByRole('button', { name: 'Save Lineup' }).click();
+  await expect(game.getByTestId('lineup-A')).toContainText('1 / 5');
+  for (let i = 0; i < 6; i++) await page.getByRole('button', { name: 'Skip ban', exact: true }).click();
+  await page.getByLabel(/^Character to record/).selectOption('Ahri');
+  await page.getByRole('button', { name: 'Record entry', exact: true }).click();
+  const assignment = game.getByLabel('Player for turn 7');
+  const who = await assignment.locator('option').nth(1).getAttribute('value');
+  await assignment.selectOption(who!);
+  await game.getByRole('button', { name: 'Save Player Assignment' }).click();
+  await first.getByRole('button', { name: 'Remove from Roster' }).click();
+  await expect(roster.getByTestId('roster-player')).toHaveCount(1);
+  await expect(assignment).toHaveValue(who!);
+  await expect(game.getByTestId('lineup-A')).toContainText('Former Roster member');
+  await page.reload();
+  await page.getByRole('button', { name: 'Roster Owls vs Roster Foxes', exact: true }).click();
+  await expect(page.getByTestId('game-players-current').getByLabel('Player for turn 7')).toHaveValue(who!);
+  await page.screenshot({ path: '/tmp/nimbus-sequential/issue12-rosters.png', fullPage: true });
+});

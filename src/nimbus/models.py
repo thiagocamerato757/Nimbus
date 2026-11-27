@@ -75,9 +75,23 @@ class RuleSnapshot(Value):
     series_format: SeriesFormat = SeriesFormat()
 
 
+class RosterTeam(Value):
+    id: str
+    name: str
+
+
+class Player(Value):
+    declared_pools: dict[str, tuple[str, ...]] = Field(default_factory=dict)
+    id: str
+    name: str
+    usual_role: str | None = None
+    current_team_id: str | None = None
+
+
 class Team(Value):
     id: TeamId
     name: str
+    roster_id: str | None = None
 
 
 class Assignment(Value):
@@ -129,7 +143,18 @@ class ActionEdit(Value):
     after: DraftAction | None
 
 
+class PlayerAssignment(Value):
+    turn_index: int
+    player_id: str
+
+
+def empty_lineups() -> dict[TeamId, tuple[str, ...]]:
+    return {"A": (), "B": ()}
+
+
 class Game(Value):
+    player_assignments: tuple[PlayerAssignment, ...] = ()
+    lineups: dict[TeamId, tuple[str, ...]] = Field(default_factory=empty_lineups)
     patch: str | None = None
     id: str
     number: int
