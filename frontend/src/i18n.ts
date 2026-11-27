@@ -1,5 +1,12 @@
 // All interface copy is keyed here; profile and user-entered names are data.
 const en = {
+  correctTurn: 'Correct turn {number}', replacementCharacter: 'Replacement Character',
+  saveCorrection: 'Save correction', cancelCorrection: 'Cancel correction', retiredCharacter: '{name} · Retired',
+  clearLatest: 'Clear latest Draft Action', editHistory: 'Edit history', cleared: 'Cleared',
+  acknowledgeViolation: 'Acknowledge Violation', acknowledgementReason: 'Acknowledgement reason', acknowledgementNote: 'Acknowledgement note',
+  cannot_clear_action: 'Only the latest Draft Action of the current Game can be cleared.',
+  game_not_found: 'This Game could not be found.', action_not_found: 'This Draft Action could not be found.',
+  violation_not_found: 'This Violation no longer exists.',
   skippedBan: 'Skipped Ban', skipBan: 'Skip ban',
   overrideReason: 'Override reason', overrideNote: 'Override note', recordOverride: 'Record with Override',
   official_ruling: 'Official ruling', profile_mismatch: 'Profile mismatch', earlier_entry_wrong: 'Earlier entry was wrong', other: 'Other',

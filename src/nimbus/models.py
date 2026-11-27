@@ -123,6 +123,12 @@ class DraftAction(Value):
     character_id: str | None
 
 
+class ActionEdit(Value):
+    recorded_at: str
+    before: DraftAction
+    after: DraftAction | None
+
+
 class Game(Value):
     patch: str | None = None
     id: str
@@ -130,6 +136,7 @@ class Game(Value):
     assignments: tuple[Assignment, ...]
     actions: tuple[DraftAction, ...] = ()
     acknowledgements: tuple[Acknowledgement, ...] = ()
+    edit_history: tuple[ActionEdit, ...] = ()
 
 
 class Series(Value):

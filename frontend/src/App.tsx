@@ -35,6 +35,7 @@ export default function App() {
   const [rejectedRule, setRejectedRule] = useState('');
   const [overrideCategory, setOverrideCategory] = useState('official_ruling');
   const [overrideNote, setOverrideNote] = useState('');
+  const [correction, setCorrection] = useState<{ game: string; turn: number; character: string } | null>(null);
   const profile = profiles.find(p => p.id === (series?.profile_id ?? profileId));
   const current = series?.games.at(-1);
   const nextTurn = current?.state.next_turn;
@@ -67,13 +68,13 @@ export default function App() {
       const updated = result.data;
       setCharacter(''); setSearch(''); setOverrideNote('');
       workspace.accept({ data: [updated, ...seriesList.filter(item => item.id !== updated.id)], version: result.version });
-      setSelectedId(updated.id); setEditVersion(null);
+      setSelectedId(updated.id); setEditVersion(null); setCorrection(null);
       void workspace.refresh();
     } catch (e) {
       setError(errorText(e instanceof ApiError ? e.code : 'unexpected'));
       if (e instanceof ApiError && ['fearless_lock', 'wasted_ban', 'duplicate_character'].includes(e.code)) setRejectedRule(e.code);
       if (e instanceof ApiError && e.code === 'stale_version') {
-        setCharacter(''); setEditVersion(null);
+        setCharacter(''); setEditVersion(null); setCorrection(null);
         await workspace.refresh();
       }
     } finally { setBusy(false); }
@@ -108,6 +109,30 @@ export default function App() {
     return actions.length ? <ol className={`entries ${kind}`}>
       {actions.map(action => <li key={action.turn_index}>{action.character_id === null ? t('skippedBan') : characterName(action.character_id)}</li>)}
     </ol> : <p className="empty">{t('noActions')}</p>;
+  }
+
+  function violationList(game: Game) {
+    return game.state.violations.map(violation => <div key={`${violation.turn_index}-${violation.rule}`}>
+      <p>{t(violation.status === 'acknowledged' ? 'acknowledgedViolation' : 'openViolation')} · {t('turn', { number: violation.turn_index + 1, team: teamName(game.actions.find(a => a.turn_index === violation.turn_index)!.team_id), kind: '' })} · {errorText(violation.rule)}
+        {violation.reason && <> · {t(violation.reason.category)}{violation.reason.note && <> · {violation.reason.note}</>}</>}
+      </p>
+      {violation.status === 'open' && <form onChangeCapture={() => setEditVersion(previous => previous ?? version)} onSubmit={event => {
+        event.preventDefault();
+        const fields = new FormData(event.currentTarget);
+        void save(`/series/${series!.id}/games/${game.id}/actions/${violation.turn_index}/acknowledge`, {
+          rule: violation.rule, reason: { category: fields.get('category'), note: fields.get('note') || null },
+        });
+      }}>
+        <label>{t('acknowledgementReason')}<select name="category" required onChange={event => {
+          const note = event.currentTarget.form?.elements.namedItem('note') as HTMLInputElement | null;
+          if (note) note.required = event.target.value === 'other';
+        }}>
+          {(['official_ruling', 'profile_mismatch', 'earlier_entry_wrong', 'other'] as const).map(category => <option key={category} value={category}>{t(category)}</option>)}
+        </select></label>
+        <label>{t('acknowledgementNote')}<input name="note" maxLength={2000} /></label>
+        <button disabled={busy}>{t('acknowledgeViolation')}</button>
+      </form>}
+    </div>);
   }
 
   return <div className="app-shell">
@@ -203,12 +228,10 @@ export default function App() {
               </form>}
               </> : <><h2>{t('complete')}</h2><p className="muted">{t('draftCompleteHint')}</p></>}
           </section>
+          {!!current.actions.length && <button disabled={busy} onClick={() => void save(`/series/${series.id}/games/${current.id}/actions/${current.actions.at(-1)!.turn_index}/clear`, {})}>{t('clearLatest')}</button>}
           <div data-testid="rule-notices" role="status">
             {current.state.notices.map(notice => <p key={`notice-${notice.turn_index}`}>{errorText(notice.rule)}</p>)}
-            {current.state.violations.map(violation => <p key={`${violation.turn_index}-${violation.rule}`}>
-              {t(violation.status === 'acknowledged' ? 'acknowledgedViolation' : 'openViolation')} · {errorText(violation.rule)}
-              {violation.reason && <> · {t(violation.reason.category)}{violation.reason.note && <> · {violation.reason.note}</>}</>}
-            </p>)}
+            {violationList(current)}
           </div>
           {!!current.state.profile_update_hints.length && <p data-testid="profile-update-hint">{t('profileUpdateHint')}</p>}
           <div className="team-grid">{series.teams.map(team => {
@@ -242,6 +265,25 @@ export default function App() {
             <summary><strong>{t('game', { number: game.number })}</strong><span>{game.state.complete ? t('drafted') : t('drafting')}</span></summary>
             <div className="timeline-teams">{series.teams.map(team => <div key={team.id}><h3>{team.name}</h3>
               <h4>{t('picks')}</h4>{actionList(game, team.id, 'pick')}<h4>{t('bans')}</h4>{actionList(game, team.id, 'ban')}</div>)}</div>
+            {game.id !== current?.id && violationList(game)}
+            <ol className="correction-actions">{game.actions.map(action => <li key={action.turn_index}>
+              <span>{action.turn_index + 1} · {teamName(action.team_id)} · {t(action.kind)} · {action.character_id === null ? t('skippedBan') : characterName(action.character_id)}</span>
+              <button disabled={busy} onClick={() => { setCorrection({ game: game.id, turn: action.turn_index, character: action.character_id ?? '' }); setEditVersion(version); }}>{t('correctTurn', { number: action.turn_index + 1 })}</button>
+              {correction?.game === game.id && correction.turn === action.turn_index && <form onSubmit={event => {
+                event.preventDefault();
+                void save(`/series/${series.id}/games/${game.id}/actions/${action.turn_index}/correct`, { character_id: correction.character || null });
+              }}>
+                <label>{t('replacementCharacter')}<select value={correction.character} onChange={event => setCorrection({ ...correction, character: event.target.value })}>
+                  {action.kind === 'ban' && <option value="">{t('skippedBan')}</option>}
+                  {profile?.catalog.map(c => <option key={c.id} value={c.id}>{c.retired ? t('retiredCharacter', { name: c.name }) : c.name}</option>)}
+                </select></label>
+                <button disabled={busy}>{t('saveCorrection')}</button>
+                <button type="button" disabled={busy} onClick={() => { setCorrection(null); setEditVersion(null); }}>{t('cancelCorrection')}</button>
+              </form>}
+            </li>)}</ol>
+            {!!game.edit_history.length && <section data-testid="edit-history"><h3>{t('editHistory')}</h3><ol>{game.edit_history.map((edit, index) => <li key={index}>
+              <time dateTime={edit.recorded_at}>{new Date(edit.recorded_at).toLocaleString()}</time> · {edit.before.turn_index + 1} · {edit.before.character_id === null ? t('skippedBan') : characterName(edit.before.character_id)} → {edit.after === null ? t('cleared') : edit.after.character_id === null ? t('skippedBan') : characterName(edit.after.character_id)}
+            </li>)}</ol></section>}
             {game.state.complete && <p className="muted">{t('missing')}</p>}
           </details>)}
         </section>}

@@ -7,7 +7,13 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from nimbus.engine import derive_state, record_entry
+from nimbus.engine import (
+    acknowledge_violation,
+    clear_action,
+    correct_action,
+    derive_state,
+    record_entry,
+)
 from nimbus.local_access import LocalAccess
 from nimbus.models import (
     Assignment,
@@ -49,6 +55,15 @@ class StartGame(Request):
     first_pick_team: TeamId
 
 
+class AcknowledgeViolation(Request):
+    rule: str
+    reason: OverrideReason
+
+
+class CorrectAction(Request):
+    character_id: str | None
+
+
 class EnterAction(Request):
     character_id: str | None
     override: OverrideReason | None = None
@@ -76,6 +91,13 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
                 for game in stored_series.games
                 for action in game.actions
                 if action.character_id is not None
+            )
+            references[stored_series.profile_id].update(
+                action.character_id
+                for game in stored_series.games
+                for edit in game.edit_history
+                for action in (edit.before, edit.after)
+                if action is not None and action.character_id is not None
             )
         loaded_profiles = load_profiles(profile_dir, references)
     except ProfileLoadError as error:
@@ -238,6 +260,72 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
                 422 if code == "unknown_character" else 409,
             ) from error
         store.add_action(game.id, action, recorded)
+        return view(read(identifier))
+
+    @app.post("/api/series/{identifier}/games/{game_id}/actions/{turn_index}/correct")
+    def correct(
+        identifier: str, game_id: str, turn_index: int, request: CorrectAction
+    ) -> SeriesView:
+        series = read(identifier)
+        game = next((g for g in series.games if g.id == game_id), None)
+        if game is None:
+            raise reject("game_not_found", "Game not found.", 404)
+        try:
+            corrected = correct_action(
+                series.rule_snapshot,
+                profiles()[series.profile_id].catalog,
+                game,
+                turn_index,
+                request.character_id,
+            )
+        except ValueError as error:
+            raise reject(
+                str(error), "Choose an existing Character and recorded turn.", 422
+            ) from error
+        before = next(a for a in game.actions if a.turn_index == turn_index)
+        after = next(a for a in corrected.actions if a.turn_index == turn_index)
+        store.save_correction(before, game, after)
+        return view(read(identifier))
+
+    @app.post("/api/series/{identifier}/games/{game_id}/actions/{turn_index}/acknowledge")
+    def acknowledge(
+        identifier: str,
+        game_id: str,
+        turn_index: int,
+        request: AcknowledgeViolation,
+    ) -> SeriesView:
+        series = read(identifier)
+        game = next((g for g in series.games if g.id == game_id), None)
+        if game is None:
+            raise reject("game_not_found", "Game not found.", 404)
+        try:
+            acknowledged = acknowledge_violation(
+                series.rule_snapshot,
+                profiles()[series.profile_id].catalog,
+                series.games,
+                game,
+                turn_index,
+                request.rule,
+                request.reason,
+            )
+        except ValueError as error:
+            raise reject(str(error), "This Violation no longer exists.", 404) from error
+        store.save_acknowledgements(acknowledged)
+        return view(read(identifier))
+
+    @app.post("/api/series/{identifier}/games/{game_id}/actions/{turn_index}/clear")
+    def clear(identifier: str, game_id: str, turn_index: int) -> SeriesView:
+        series = read(identifier)
+        game = next((g for g in series.games if g.id == game_id), None)
+        if game is None:
+            raise reject("game_not_found", "Game not found.", 404)
+        try:
+            clear_action(series.games, game, turn_index)
+        except ValueError as error:
+            raise reject(
+                str(error), "Only the latest action of the current Game can be cleared."
+            ) from error
+        store.save_correction(game.actions[-1], game, None)
         return view(read(identifier))
 
     return app

@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel
 
-from nimbus.models import DraftAction, Game, Series
+from nimbus.models import ActionEdit, DraftAction, Game, Series
 
 
 def default_data_dir() -> Path:
@@ -51,7 +51,7 @@ class Store:
         with self.connection() as connection:
             connection.execute("PRAGMA journal_mode=WAL")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version in (1, 2, 3):
+            if version in (1, 2, 3, 4):
                 self.create_backup("migration")
             if version == 0:
                 migration = Path(__file__).with_name("migrations") / "001_initial.sql"
@@ -77,7 +77,15 @@ class Store:
                     connection.executescript("BEGIN;\n" + migration.read_text() + "\nCOMMIT;")
                 else:
                     connection.execute("PRAGMA user_version = 4")
-            elif version != 4:
+                version = 4
+            if version == 4:
+                migration = Path(__file__).with_name("migrations") / "005_corrections.sql"
+                columns = {row[1] for row in connection.execute("PRAGMA table_info(games)")}
+                if "edit_history" not in columns:
+                    connection.executescript("BEGIN;\n" + migration.read_text() + "\nCOMMIT;")
+                else:
+                    connection.execute("PRAGMA user_version = 5")
+            elif version != 5:
                 raise RuntimeError(f"Unsupported Nimbus database schema: {version}")
 
     @contextmanager
@@ -126,6 +134,7 @@ class Store:
                         assignments=json.loads(game["assignments"]),
                         actions=tuple(DraftAction.model_validate(a) for a in actions),
                         acknowledgements=json.loads(game["acknowledgements"]),
+                        edit_history=json.loads(game["edit_history"]),
                     )
                 )
             return Series(
@@ -177,6 +186,31 @@ class Store:
             connection.execute(
                 "UPDATE games SET acknowledgements = ? WHERE id = ?",
                 (json.dumps([a.model_dump() for a in game.acknowledgements]), game_id),
+            )
+
+    def save_acknowledgements(self, game: Game) -> None:
+        with self.connection() as connection:
+            connection.execute(
+                "UPDATE games SET acknowledgements = ? WHERE id = ?",
+                (json.dumps([a.model_dump() for a in game.acknowledgements]), game.id),
+            )
+
+    def save_correction(self, before: DraftAction, game: Game, after: DraftAction | None) -> None:
+        edit = ActionEdit(recorded_at=datetime.now(UTC).isoformat(), before=before, after=after)
+        with self.connection() as connection:
+            if after is None:
+                connection.execute(
+                    "DELETE FROM draft_actions WHERE game_id = ? AND turn_index = ?",
+                    (game.id, before.turn_index),
+                )
+            else:
+                connection.execute(
+                    "UPDATE draft_actions SET character_id = ? WHERE game_id = ? AND turn_index = ?",
+                    (after.character_id, game.id, before.turn_index),
+                )
+            connection.execute(
+                "UPDATE games SET edit_history = ? WHERE id = ?",
+                (json.dumps([e.model_dump() for e in game.edit_history + (edit,)]), game.id),
             )
 
     def begin_request(self, writing: bool) -> sqlite3.Connection:

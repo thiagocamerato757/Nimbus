@@ -9,10 +9,12 @@ export interface Profile { id: string; name: string; sides: string[]; catalog: C
   fearless_presets: Fearless[]; default_fearless: string;
 }
 export interface Turn { position: 'first' | 'second'; kind: Kind }
+export interface DraftAction { turn_index: number; team_id: TeamId; kind: Kind; character_id: string | null }
 export interface Game {
   id: string; number: number; patch: string | null;
   assignments: { team_id: TeamId; side: string; position: 'first' | 'second' }[];
-  actions: { turn_index: number; team_id: TeamId; kind: Kind; character_id: string | null }[];
+  actions: DraftAction[];
+  edit_history: { recorded_at: string; before: DraftAction; after: DraftAction | null }[];
   state: { locks: Record<TeamId, string[]>; available: Record<TeamId, string[]>;
     notices: { turn_index: number; rule: string }[];
     violations: { turn_index: number; rule: string; status: 'open' | 'acknowledged'; reason: { category: 'official_ruling' | 'profile_mismatch' | 'earlier_entry_wrong' | 'other'; note: string | null } | null }[];

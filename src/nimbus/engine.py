@@ -231,3 +231,68 @@ def derive_state(
             ),
         }
     )
+
+
+def correct_action(
+    settings: RuleSnapshot,
+    catalog: Sequence[Character],
+    game: Game,
+    turn_index: int,
+    character_id: str | None,
+) -> Game:
+    """Replace one recorded Character; Game Rules never block corrections."""
+    action = next((a for a in game.actions if a.turn_index == turn_index), None)
+    if action is None:
+        raise ValueError("action_not_found")
+    if turn_index < 0 or turn_index >= len(settings.draft_order.turns):
+        raise ValueError("invalid_turn")
+    if character_id is None and action.kind == "pick":
+        raise ValueError("cannot_skip_pick")
+    if character_id is not None and not any(c.id == character_id for c in catalog):
+        raise ValueError("unknown_character")
+    replacement = action.model_copy(update={"character_id": character_id})
+    return game.model_copy(
+        update={"actions": tuple(replacement if a == action else a for a in game.actions)}
+    )
+
+
+def acknowledge_violation(
+    settings: RuleSnapshot,
+    catalog: Sequence[Character],
+    games: Sequence[Game],
+    game: Game,
+    turn_index: int,
+    rule: str,
+    reason: OverrideReason,
+) -> Game:
+    """Remember the currently broken rule, action and cause without changing it."""
+    for index, action in enumerate(game.actions):
+        if action.turn_index != turn_index:
+            continue
+        prefix = game.model_copy(update={"actions": game.actions[:index]})
+        if rule not in _rules(settings, catalog, games, prefix, action):
+            break
+        acknowledgement = Acknowledgement(
+            turn_index=turn_index,
+            rule=rule,
+            fingerprint=_fingerprint(settings, rule, games, prefix, action),
+            reason=reason,
+        )
+        return game.model_copy(
+            update={
+                "acknowledgements": (acknowledgement,) + game.acknowledgements,
+            }
+        )
+    raise ValueError("violation_not_found")
+
+
+def clear_action(games: Sequence[Game], game: Game, turn_index: int) -> Game:
+    """Remove only the most recent action of the current Game."""
+    if (
+        not games
+        or games[-1].id != game.id
+        or not game.actions
+        or game.actions[-1].turn_index != turn_index
+    ):
+        raise ValueError("cannot_clear_action")
+    return game.model_copy(update={"actions": game.actions[:-1]})
