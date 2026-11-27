@@ -275,3 +275,25 @@ def test_bs014_issue9_invalid_profile_settings_name_file_and_defect(
     assert response.status_code == 500
     assert path.name in response.text
     assert defect in response.text
+
+
+@pytest.mark.parametrize("change", ["remove", "rename_id", "duplicate_id"])
+def test_stored_profile_identity_must_resolve_unambiguously(tmp_path, profile_files, change):
+    data = tmp_path / "data"
+    with api(data, profile_files) as client:
+        base = recorded_series(client)
+    path = profile_files / "league-of-legends.rules.yaml"
+    if change == "remove":
+        path.unlink()
+    elif change == "rename_id":
+        edit_yaml(path, lambda rules: rules.update(id="renamed"))
+    else:
+        shutil.copyfile(path, profile_files / "duplicate.rules.yaml")
+    with api(data, profile_files) as restarted:
+        response = restarted.get("/api/profiles")
+        assert response.status_code == 500
+        assert response.json()["detail"]["code"] == "profile_load_failed"
+        message = response.json()["detail"]["message"]
+        assert str(profile_files) in message
+        assert "league-of-legends" in message
+        assert restarted.get(base).json()["detail"]["code"] == "profile_load_failed"
