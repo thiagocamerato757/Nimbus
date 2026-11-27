@@ -140,5 +140,13 @@ def load_profiles(
                 f"{catalog_path}: Character used by stored data missing from catalog: "
                 + ", ".join(sorted(missing))
             )
+        if profile.id in result:
+            raise ProfileLoadError(f"{path}: duplicate Title profile id: {profile.id}")
         result[profile.id] = profile
+    missing_profiles = set(referenced_characters or {}) - result.keys()
+    if missing_profiles:
+        raise ProfileLoadError(
+            f"{root}: Title profile used by stored data missing from rules files: "
+            + ", ".join(sorted(missing_profiles))
+        )
     return result
