@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from nimbus.engine import derive_state, validate_action
 from nimbus.local_access import LocalAccess
 from nimbus.models import Assignment, DraftAction, Game, GameView, Series, SeriesView, Team, TeamId
-from nimbus.profiles import TitleProfile, load_profiles
+from nimbus.profiles import ProfileLoadError, TitleProfile, load_profiles
 from nimbus.store import Store, default_data_dir
 from nimbus.workspace import Workspace
 
@@ -44,10 +44,27 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
     app.add_middleware(Workspace, store=store)
     app.add_middleware(LocalAccess)
 
+    # An application loads one checked set of files. Reloading needs a restart;
+    # an edit on disk cannot invalidate a draft already in progress.
+    loaded_profiles: dict[str, TitleProfile] = {}
+    profile_error: ProfileLoadError | None = None
+    try:
+        references: dict[str, set[str]] = {}
+        for stored_series in store.list_series():
+            references.setdefault(stored_series.profile_id, set()).update(
+                action.character_id for game in stored_series.games for action in game.actions
+            )
+        loaded_profiles = load_profiles(profile_dir, references)
+    except ProfileLoadError as error:
+        profile_error = error
+
     def profiles() -> dict[str, TitleProfile]:
-        return load_profiles(profile_dir)
+        if profile_error is not None:
+            raise reject("profile_load_failed", str(profile_error), 500)
+        return loaded_profiles
 
     def read(identifier: str) -> Series:
+        profiles()
         try:
             return store.read(identifier)
         except KeyError:
@@ -70,6 +87,7 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
 
     @app.get("/api/series")
     def get_series_list() -> list[SeriesView]:
+        profiles()
         return [view(series) for series in store.list_series()]
 
     @app.post("/api/series", status_code=201)
