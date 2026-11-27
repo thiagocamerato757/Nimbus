@@ -1,6 +1,7 @@
 """The local HTTP boundary for manual draft entry."""
 
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
@@ -8,7 +9,18 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from nimbus.engine import derive_state, validate_action
 from nimbus.local_access import LocalAccess
-from nimbus.models import Assignment, DraftAction, Game, GameView, Series, SeriesView, Team, TeamId
+from nimbus.models import (
+    Assignment,
+    DraftAction,
+    Fearless,
+    Game,
+    GameView,
+    Series,
+    SeriesFormat,
+    SeriesView,
+    Team,
+    TeamId,
+)
 from nimbus.profiles import ProfileLoadError, TitleProfile, load_profiles
 from nimbus.store import Backup, BackupError, Store, default_data_dir
 from nimbus.workspace import Workspace
@@ -23,9 +35,15 @@ class CreateSeries(Request):
     team_a: str = Field(min_length=1, max_length=100)
     team_b: str = Field(min_length=1, max_length=100)
     our_team: TeamId | None = None
+    draft_order_id: str | None = None
+    series_format: SeriesFormat | None = None
+    fearless: Fearless | None = None
+    patch: str | None = Field(default=None, max_length=100)
+    record_type: Literal["official", "scrim"] = "official"
 
 
 class StartGame(Request):
+    patch: str | None = Field(default=None, max_length=100)
     team_a_side: str
     first_pick_team: TeamId
 
@@ -106,12 +124,36 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
         profile = profiles().get(request.profile_id)
         if profile is None:
             raise reject("profile_not_found", "Title profile not found.", 404)
+        snapshot = profile.snapshot()
+        order = next(
+            (
+                order
+                for order in profile.draft_orders
+                if order.id == (request.draft_order_id or profile.default_draft_order)
+            ),
+            None,
+        )
+        if order is None:
+            raise reject("unknown_draft_order", "Choose a Draft Order from the Title profile.", 422)
+        if request.series_format and request.series_format not in profile.series_formats:
+            raise reject(
+                "unknown_series_format", "Choose a Series Format allowed by the Title profile.", 422
+            )
+        snapshot = snapshot.model_copy(
+            update={
+                "draft_order": order,
+                "series_format": request.series_format or snapshot.series_format,
+                "fearless": request.fearless or snapshot.fearless,
+            }
+        )
         series = Series(
+            patch=request.patch,
+            record_type=request.record_type,
             id=uuid4().hex,
             profile_id=profile.id,
             teams=(Team(id="A", name=request.team_a), Team(id="B", name=request.team_b)),
             our_team=request.our_team,
-            rule_snapshot=profile.snapshot(),
+            rule_snapshot=snapshot,
         )
         store.create(series)
         return view(series)
@@ -134,7 +176,7 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
                 "draft_incomplete", "Complete the current draft before starting the next Game."
             )
         if len(series.games) >= series.rule_snapshot.series_format.games:
-            raise reject("series_full", "All Games in this Best-of-5 Series have been started.")
+            raise reject("series_full", "All Games in this Series Format have been started.")
         if request.team_a_side not in profile.sides:
             raise reject("unknown_side", "Choose a Side from the Title profile.", 422)
         other_side = next(side for side in profile.sides if side != request.team_a_side)
@@ -146,7 +188,12 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
             )
             for team in series.teams
         )
-        game = Game(id=uuid4().hex, number=len(series.games) + 1, assignments=assignments)
+        game = Game(
+            id=uuid4().hex,
+            number=len(series.games) + 1,
+            assignments=assignments,
+            patch=request.patch if request.patch is not None else series.patch,
+        )
         store.add_game(identifier, game)
         return view(read(identifier))
 
@@ -170,6 +217,11 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
             turn_index=turn.index, team_id=turn.team_id, kind=turn.kind, character_id=character.id
         )
         reason = validate_action(series.rule_snapshot, profile.catalog, series.games, game, action)
+        if reason == "wasted_ban":
+            raise reject(
+                reason,
+                "Wasted ban: the opposing Team cannot pick this Character due to a Fearless Lock.",
+            )
         if reason:
             raise reject(reason, "Fearless Lock: this Character was picked in an earlier Game.")
         store.add_action(game.id, action)

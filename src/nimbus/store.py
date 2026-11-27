@@ -51,7 +51,7 @@ class Store:
         with self.connection() as connection:
             connection.execute("PRAGMA journal_mode=WAL")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version == 1:
+            if version in (1, 2):
                 self.create_backup("migration")
             if version == 0:
                 migration = Path(__file__).with_name("migrations") / "001_initial.sql"
@@ -60,7 +60,16 @@ class Store:
             if version == 1:
                 migration = Path(__file__).with_name("migrations") / "002_workspace_version.sql"
                 connection.executescript("BEGIN;\n" + migration.read_text() + "\nCOMMIT;")
-            elif version != 2:
+                version = 2
+            if version == 2:
+                migration = Path(__file__).with_name("migrations") / "003_series_settings.sql"
+                # Compatibility with an older-schema restore that retains additive columns.
+                columns = {row[1] for row in connection.execute("PRAGMA table_info(series)")}
+                if "patch" not in columns:
+                    connection.executescript("BEGIN;\n" + migration.read_text() + "\nCOMMIT;")
+                else:
+                    connection.execute("PRAGMA user_version = 3")
+            elif version != 3:
                 raise RuntimeError(f"Unsupported Nimbus database schema: {version}")
 
     @contextmanager
@@ -103,6 +112,7 @@ class Store:
                 ]
                 games.append(
                     Game(
+                        patch=game["patch"],
                         id=game["id"],
                         number=game["number"],
                         assignments=json.loads(game["assignments"]),
@@ -110,6 +120,8 @@ class Store:
                     )
                 )
             return Series(
+                patch=row["patch"],
+                record_type=row["record_type"],
                 id=row["id"],
                 profile_id=row["profile_id"],
                 teams=json.loads(row["teams"]),
@@ -121,25 +133,28 @@ class Store:
     def create(self, series: Series) -> None:
         with self.connection() as connection:
             connection.execute(
-                "INSERT INTO series VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO series (id, profile_id, teams, our_team, rule_snapshot, patch, record_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     series.id,
                     series.profile_id,
                     json.dumps([t.model_dump() for t in series.teams]),
                     series.our_team,
                     series.rule_snapshot.model_dump_json(),
+                    series.patch,
+                    series.record_type,
                 ),
             )
 
     def add_game(self, series_id: str, game: Game) -> None:
         with self.connection() as connection:
             connection.execute(
-                "INSERT INTO games VALUES (?, ?, ?, ?)",
+                "INSERT INTO games (id, series_id, number, assignments, patch) VALUES (?, ?, ?, ?, ?)",
                 (
                     game.id,
                     series_id,
                     game.number,
                     json.dumps([a.model_dump() for a in game.assignments]),
+                    game.patch,
                 ),
             )
 

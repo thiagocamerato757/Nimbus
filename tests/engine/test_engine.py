@@ -1,3 +1,4 @@
+import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -88,9 +89,19 @@ def test_locks_exclude_bans_and_current_game_picks(
     assert character_ids[1] in state.available["A"]
 
 
+@pytest.mark.parametrize(
+    "reach, sources",
+    [
+        ("none", "picks"),
+        ("none", "picks_and_bans"),
+        ("picking_team", "picks"),
+        ("both_teams", "picks"),
+        ("both_teams", "picks_and_bans"),
+    ],
+)
 @given(data=st.data())
 def test_deterministic_and_locked_characters_are_never_available(
-    profile, assignments, character_ids, data
+    profile, assignments, character_ids, data, reach, sources
 ):
     # Both profiles use the same strategy, each drawing only from its own Catalog.
     identifiers = st.lists(
@@ -114,9 +125,64 @@ def test_deterministic_and_locked_characters_are_never_available(
     previous = game(1, data.draw(identifiers, label="earlier Game Characters"))
     current = game(2, data.draw(identifiers, label="current Game Characters"))
     before = (previous.model_dump(), current.model_dump(), profile.model_dump())
-    first = derive_state(profile.snapshot(), profile.catalog, [previous, current], current)
-    second = derive_state(profile.snapshot(), profile.catalog, [previous, current], current)
+    from nimbus.models import Fearless
+
+    settings = profile.snapshot().model_copy(
+        update={"fearless": Fearless(lock_reach=reach, lock_sources=sources)}
+    )
+    first = derive_state(settings, profile.catalog, [previous, current], current)
+    second = derive_state(settings, profile.catalog, [previous, current], current)
     assert first == second
     assert before == (previous.model_dump(), current.model_dump(), profile.model_dump())
     for team in ["A", "B"]:
         assert not set(first.locks[team]).intersection(first.available[team])
+
+
+def test_bs003_bs005_soft_fearless_ban_only_rejects_when_opponent_is_locked(
+    profile, assignments, previous_pick, character_ids
+):
+    # Parent BS-003 / scoped BS-005: A picked earlier; only B's ban is wasted.
+    from nimbus.models import Fearless
+
+    settings = profile.snapshot().model_copy(
+        update={"fearless": Fearless(id="soft", lock_reach="picking_team")}
+    )
+    current = Game(id="current", number=2, assignments=assignments)
+    state = derive_state(settings, profile.catalog, [previous_pick, current], current)
+    assert state.locks == {"A": (character_ids[0],), "B": ()}
+    for team, expected in (("A", None), ("B", "wasted_ban")):
+        ban = DraftAction(turn_index=0, team_id=team, kind="ban", character_id=character_ids[0])
+        assert (
+            validate_action(settings, profile.catalog, [previous_pick, current], current, ban)
+            == expected
+        )
+
+
+def test_bs028_picking_team_with_bans_is_rejected(profile):
+    # Parent BS-028: validation names the undefined combination.
+    import pytest
+
+    from nimbus.models import Fearless
+
+    with pytest.raises(ValueError, match="picking_team.*picks_and_bans"):
+        Fearless(id="custom", lock_reach="picking_team", lock_sources="picks_and_bans")
+
+
+def test_bs028_bans_lock_both_teams_in_next_game(profile, assignments, character_ids):
+    # Parent BS-028: picks and bans under both-Teams reach lock either Team.
+    from nimbus.models import Fearless
+
+    earlier = Game(
+        id="earlier",
+        number=1,
+        assignments=assignments,
+        actions=(
+            DraftAction(turn_index=0, team_id="A", kind="ban", character_id=character_ids[0]),
+        ),
+    )
+    current = Game(id="current", number=2, assignments=assignments)
+    settings = profile.snapshot().model_copy(
+        update={"fearless": Fearless(lock_sources="picks_and_bans")}
+    )
+    state = derive_state(settings, profile.catalog, [earlier, current], current)
+    assert state.locks == {"A": (character_ids[0],), "B": (character_ids[0],)}

@@ -15,7 +15,7 @@ from pydantic import (
     model_validator,
 )
 
-from nimbus.models import Character, DraftOrder, RuleSettings, RuleSnapshot
+from nimbus.models import Character, DraftOrder, Fearless, RuleSettings, RuleSnapshot, SeriesFormat
 
 Name = Annotated[str, StringConstraints(strict=True, strip_whitespace=True, min_length=1)]
 
@@ -62,11 +62,22 @@ class TitleProfile(BaseModel):
     draft_orders: Annotated[tuple[ProfileDraftOrder, ...], Field(min_length=1)]
     default_draft_order: Name
     rule_settings: ProfileRuleSettings
+    series_formats: Annotated[tuple[SeriesFormat, ...], Field(min_length=1)]
+    default_series_format: SeriesFormat
+    fearless_presets: Annotated[tuple[Fearless, ...], Field(min_length=1)]
+    default_fearless: Name
     catalog: tuple[Character, ...]
     data_dragon_version: str
 
     @model_validator(mode="after")
     def check_pick_counts(self) -> "TitleProfile":
+        if self.default_series_format not in self.series_formats:
+            raise ValueError("default_series_format must be in series_formats")
+        preset_ids = [preset.id for preset in self.fearless_presets]
+        if len(preset_ids) != len(set(preset_ids)):
+            raise ValueError("duplicate Fearless preset id")
+        if self.default_fearless not in preset_ids:
+            raise ValueError("default_fearless must name a Fearless preset")
         if self.sides[0] == self.sides[1]:
             raise ValueError("sides must have two distinct names")
         ids = [order.id for order in self.draft_orders]
@@ -86,7 +97,12 @@ class TitleProfile(BaseModel):
 
     def snapshot(self) -> RuleSnapshot:
         order = next(order for order in self.draft_orders if order.id == self.default_draft_order)
-        return RuleSnapshot(draft_order=order, rule_settings=self.rule_settings)
+        return RuleSnapshot(
+            draft_order=order,
+            rule_settings=self.rule_settings,
+            series_format=self.default_series_format,
+            fearless=next(p for p in self.fearless_presets if p.id == self.default_fearless),
+        )
 
 
 class ProfileLoadError(ValueError):

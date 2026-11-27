@@ -245,3 +245,33 @@ def test_bs014_retired_stored_character_remains_loadable(tmp_path, profile_files
     with api(data, profile_files) as restarted:
         assert restarted.get("/api/profiles").status_code == 200
         assert restarted.get(base).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "change, defect",
+    [
+        (lambda r: r["series_formats"].append({"kind": "best_of", "games": 2}), "odd"),
+        (
+            lambda r: r.update(default_series_format={"kind": "fixed_length", "games": 99}),
+            "default_series_format",
+        ),
+        (lambda r: r.update(default_fearless="missing"), "default_fearless"),
+        (
+            lambda r: r["fearless_presets"].append(
+                {"lock_reach": "picking_team", "lock_sources": "picks_and_bans"}
+            ),
+            "picking_team",
+        ),
+    ],
+)
+def test_bs014_issue9_invalid_profile_settings_name_file_and_defect(
+    tmp_path, profile_files, change, defect
+):
+    # Parent BS-014 / #9: newly added profile settings fail at load, never mid-Series.
+    path = profile_files / "league-of-legends.rules.yaml"
+    edit_yaml(path, change)
+    with api(tmp_path / "data", profile_files) as client:
+        response = client.get("/api/profiles")
+    assert response.status_code == 500
+    assert path.name in response.text
+    assert defect in response.text

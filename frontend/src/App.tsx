@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { ApiError, request, requestSnapshot } from './api';
 import { useLiveQuery } from './useLiveQuery';
 import { errorText, t } from './i18n';
-import type { Game, Profile, Series, TeamId } from './types';
+import type { Game, Profile, Series, TeamId, Fearless } from './types';
 
 export default function App() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -20,6 +20,14 @@ export default function App() {
   const [teamB, setTeamB] = useState('');
   const [ourTeam, setOurTeam] = useState('');
   const [profileId, setProfileId] = useState('');
+  const [draftOrder, setDraftOrder] = useState('');
+  const [formatIndex, setFormatIndex] = useState('');
+  const [variant, setVariant] = useState('');
+  const [reach, setReach] = useState<Fearless['lock_reach']>('both_teams');
+  const [sources, setSources] = useState<Fearless['lock_sources']>('picks');
+  const [patch, setPatch] = useState('');
+  const [gamePatch, setGamePatch] = useState('');
+  const [recordType, setRecordType] = useState('official');
   const [side, setSide] = useState('');
   const [firstPick, setFirstPick] = useState<TeamId>('A');
   const [character, setCharacter] = useState('');
@@ -29,6 +37,14 @@ export default function App() {
   const nextTurn = current?.state.next_turn;
   const characterName = (id: string) => profile?.catalog.find(c => c.id === id)?.name ?? id;
   const teamName = (id: TeamId) => series?.teams.find(team => team.id === id)?.name ?? id;
+
+  const creationProfile = profiles.find(p => p.id === profileId);
+  const selectedFormat = (formatIndex === '' ? creationProfile?.default_series_format : creationProfile?.series_formats[Number(formatIndex)]);
+  const chosenVariant = variant || creationProfile?.default_fearless || 'hard';
+  const chosenFearless = chosenVariant === 'custom' ? { lock_reach: reach, lock_sources: sources }
+    : creationProfile?.fearless_presets.find(p => p.id === chosenVariant);
+  const invalidCombination = chosenFearless?.lock_reach === 'picking_team' && chosenFearless?.lock_sources === 'picks_and_bans';
+  const displayFormat = series?.rule_snapshot.series_format;
 
   async function load() {
     setLoading(true); setError('');
@@ -71,11 +87,13 @@ export default function App() {
   }
   function create(event: FormEvent) {
     event.preventDefault();
-    void save('/series', { profile_id: profileId, team_a: teamA, team_b: teamB, our_team: ourTeam || null });
+    void save('/series', { profile_id: profileId, team_a: teamA, team_b: teamB, our_team: ourTeam || null,
+      draft_order_id: draftOrder || creationProfile?.default_draft_order, series_format: selectedFormat,
+      fearless: chosenFearless, patch: patch || null, record_type: recordType });
   }
   function start(event: FormEvent) {
     event.preventDefault();
-    if (series) void save(`/series/${series.id}/games`, { team_a_side: side, first_pick_team: firstPick });
+    if (series) void save(`/series/${series.id}/games`, { team_a_side: side, first_pick_team: firstPick, patch: gamePatch || series.patch });
   }
   function record(event: FormEvent) {
     event.preventDefault();
@@ -110,7 +128,7 @@ export default function App() {
         <div><p className="eyebrow">{profile?.name ?? t('workspace')}</p>
           <h1>{series ? t('vs', { a: teamName('A'), b: teamName('B') }) : t('subtitle')}</h1>
         </div>
-        <div className="badges"><span>{t('bestOf')}</span><span className="fearless-badge">{t('hard')}</span></div>
+        {series && <div className="badges" data-testid="series-settings"><span>{displayFormat && `${t(displayFormat.kind)} · ${displayFormat.games}`}</span><span className="fearless-badge">{t(series.rule_snapshot.fearless.id)}</span><span>{t(series.record_type)}</span>{series.patch && <span>{series.patch}</span>}</div>}
       </header>
       {(error || workspace.error) && <div role="alert" className="alert">{error || errorText(workspace.error)}{!profiles.length && <button onClick={() => void load()}>{t('retry')}</button>}</div>}
       {loading || (!workspace.snapshot && !workspace.error) ? <p role="status">{t('loading')}</p> : !series ? <section className="setup panel">
@@ -118,16 +136,34 @@ export default function App() {
           <h2>{t('setupTitle')}</h2><p>{t('setupDescription')}</p></div>
         <form onChangeCapture={() => setEditVersion(previous => previous ?? version)} onSubmit={create} className="series-form">
           <label>{t('titleProfile')}<select value={profileId} onChange={event => {
-            setProfileId(event.target.value); setSide(profiles.find(p => p.id === event.target.value)?.sides[0] ?? '');
+            setProfileId(event.target.value); setDraftOrder(''); setFormatIndex(''); setVariant(''); setSide(profiles.find(p => p.id === event.target.value)?.sides[0] ?? '');
           }}>{profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
           <div className="form-pair"><label>{t('teamA')}<input value={teamA} onChange={e => setTeamA(e.target.value)} required maxLength={100} /></label>
             <label>{t('teamB')}<input value={teamB} onChange={e => setTeamB(e.target.value)} required maxLength={100} /></label></div>
           <label>{t('ourTeam')}<select value={ourTeam} onChange={e => setOurTeam(e.target.value)}>
             <option value="">{t('neither')}</option><option value="A">{teamA || t('teamA')}</option><option value="B">{teamB || t('teamB')}</option>
           </select></label>
-          <div className="format-summary"><div><small>{t('format')}</small><strong>{t('bestOf')}</strong></div>
-            <div><small>{t('variant')}</small><strong>{t('hard')}</strong></div></div>
-          <button className="primary" disabled={busy || !profile}>{busy ? t('saving') : t('create')}</button>
+          <label>{t('format')}<select aria-label={t('format')} value={formatIndex || String(creationProfile?.series_formats.findIndex(f => f.kind === creationProfile.default_series_format.kind && f.games === creationProfile.default_series_format.games))} onChange={e => setFormatIndex(e.target.value)}>
+            {creationProfile?.series_formats.map((f, i) => <option key={i} value={i}>{t(f.kind)} · {f.games}</option>)}
+          </select></label>
+          <label>{t('draftOrder')}<select aria-label={t('draftOrder')} value={draftOrder || creationProfile?.default_draft_order} onChange={e => setDraftOrder(e.target.value)}>
+            {creationProfile?.draft_orders.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select></label>
+          <label>{t('variant')}<select aria-label={t('variant')} value={chosenVariant} onChange={e => setVariant(e.target.value)}>
+            {creationProfile?.fearless_presets.map(v => <option key={v.id} value={v.id}>{t(v.id)}</option>)}<option value="custom">{t('custom')}</option>
+          </select></label>
+          {chosenVariant === 'custom' && <>
+            <label>{t('lockReach')}<select aria-label={t('lockReach')} value={reach} onChange={e => setReach(e.target.value as Fearless['lock_reach'])}>
+              {(['none', 'picking_team', 'both_teams'] as const).map(v => <option key={v} value={v}>{t(v)}</option>)}
+            </select></label>
+            <label>{t('lockSources')}<select aria-label={t('lockSources')} value={sources} onChange={e => setSources(e.target.value as Fearless['lock_sources'])}>
+              <option value="picks">{t('sourcesPicks')}</option><option value="picks_and_bans">{t('sourcesBans')}</option>
+            </select></label>
+            {invalidCombination && <p role="alert">{t('invalidCombination')}</p>}
+          </>}
+          <label>{t('recordType')}<select aria-label={t('recordType')} value={recordType} onChange={e => setRecordType(e.target.value)}><option value="official">{t('official')}</option><option value="scrim">{t('scrim')}</option></select></label>
+          <label>{t('seriesPatch')}<input value={patch} onChange={e => setPatch(e.target.value)} maxLength={100} /></label>
+          <button className="primary" disabled={busy || !profile || invalidCombination}>{busy ? t('saving') : t('create')}</button>
         </form>
       </section> : <>
         <div className="game-strip" aria-label={t('timeline')}>
@@ -137,6 +173,7 @@ export default function App() {
         </div>
         {current && <>
           <section className="entry-panel panel">
+            {current.patch && <p data-testid="game-patch">{current.patch}</p>}
             <div className="entry-heading"><span className="eyebrow">{t('liveEntry')}</span><span data-testid="draft-progress" className="mono">
               {t('progress', { filled: current.actions.length, total: series.rule_snapshot.draft_order.turns.length })}</span></div>
             {nextTurn ? <><h2 data-testid="next-turn">{t('turn', { number: nextTurn.index + 1, team: teamName(nextTurn.team_id), kind: t(nextTurn.kind) })}</h2>
@@ -165,16 +202,17 @@ export default function App() {
           })}</div>
           <p className="lock-footnote">{t('lockHint')}</p>
         </>}
-        {(!current || current.state.complete) && series.games.length < 5 ? <section className="next-game panel">
+        {(!current || current.state.complete) && series.games.length < series.rule_snapshot.series_format.games ? <section className="next-game panel">
           <div><h2>{t('gameSetup')}</h2><p className="muted">{t('gameSetupHint')}</p></div>
           <form onChangeCapture={() => setEditVersion(previous => previous ?? version)} onSubmit={start} className="next-game-form">
             <label>{t('sideFor', { team: teamName('A') })}<select value={side} onChange={e => setSide(e.target.value)}>
               {profile?.sides.map(value => <option key={value} value={value}>{value === 'blue' || value === 'red' ? t(value) : value}</option>)}</select></label>
             <label>{t('firstPick')}<select value={firstPick} onChange={e => setFirstPick(e.target.value as TeamId)}>
               {series.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
+            <label>{t('gamePatch')}<input value={gamePatch} placeholder={series.patch ?? ''} onChange={e => setGamePatch(e.target.value)} maxLength={100} /></label>
             <button className="primary" disabled={busy}>{t('startGame', { number: series.games.length + 1 })}</button>
           </form>
-        </section> : <p className="muted">{series.games.length >= 5 ? t('allStarted') : t('remaining')}</p>}
+        </section> : <p className="muted">{series.games.length >= series.rule_snapshot.series_format.games ? t('allStarted') : t('remaining')}</p>}
         {!!series.games.length && <section className="timeline" data-testid="timeline"><div className="section-title"><h2>{t('timeline')}</h2><p>{t('timelineHint')}</p></div>
           {series.games.map(game => <details className="timeline-game panel" key={game.id} open={game.id !== current?.id}>
             <summary><strong>{t('game', { number: game.number })}</strong><span>{game.state.complete ? t('drafted') : t('drafting')}</span></summary>

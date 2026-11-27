@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 TeamId = Literal["A", "B"]
 Position = Literal["first", "second"]
@@ -38,14 +38,34 @@ class RuleSettings(Value):
 
 
 class Fearless(Value):
-    id: Literal["hard"] = "hard"
-    lock_reach: Literal["both_teams"] = "both_teams"
-    lock_sources: Literal["picks"] = "picks"
+    id: Literal["off", "soft", "hard", "custom"] = "hard"
+    lock_reach: Literal["none", "picking_team", "both_teams"] = "both_teams"
+    lock_sources: Literal["picks", "picks_and_bans"] = "picks"
+
+    @model_validator(mode="after")
+    def check_combination(self) -> "Fearless":
+        if self.lock_reach == "picking_team" and self.lock_sources == "picks_and_bans":
+            raise ValueError(
+                "picking_team with picks_and_bans is not a defined Fearless combination"
+            )
+        preset = {
+            ("none", "picks"): "off",
+            ("picking_team", "picks"): "soft",
+            ("both_teams", "picks"): "hard",
+        }.get((self.lock_reach, self.lock_sources), "custom")
+        object.__setattr__(self, "id", preset)
+        return self
 
 
 class SeriesFormat(Value):
-    kind: Literal["best_of"] = "best_of"
-    games: Literal[5] = 5
+    kind: Literal["best_of", "fixed_length"] = "best_of"
+    games: int = Field(default=5, strict=True, gt=0)
+
+    @model_validator(mode="after")
+    def check_odd(self) -> "SeriesFormat":
+        if self.kind == "best_of" and self.games % 2 == 0:
+            raise ValueError("Best-of requires an odd number of Games")
+        return self
 
 
 class RuleSnapshot(Value):
@@ -74,6 +94,7 @@ class DraftAction(Value):
 
 
 class Game(Value):
+    patch: str | None = None
     id: str
     number: int
     assignments: tuple[Assignment, ...]
@@ -81,6 +102,8 @@ class Game(Value):
 
 
 class Series(Value):
+    patch: str | None = None
+    record_type: Literal["official", "scrim"] = "official"
     id: str
     profile_id: str
     teams: tuple[Team, ...]
