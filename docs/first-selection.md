@@ -15,8 +15,11 @@ compatible default), `loser`, `winner`, or `alternate`. For a new Game, the prev
 Game means the nonvoid attempt of exactly the preceding logical Game number.
 A missing/pending result means no holder prefill for every policy. `alternate`
 also needs that Game's recorded holder. Game 1 has no guessed holder.
-An omitted holder accepts the prefill; an explicit null records no holder.
-Prefill can always be changed. Choice starts empty.
+The prefill is computed for display only (amended 2026-11-27). The server never
+applies it: every setup or Replay request carries the holder the analyst saw, and
+an omitted holder records none. After "Record winner and start", the setup form
+shows the holder the result pre-filled, and the draft begins only when the analyst
+starts it. Prefill can always be changed. Choice starts empty.
 
 A Replay computes its default from the previous lower-number Game, never its
 same-number voided source's result or holder. Its choice starts empty. Its

@@ -115,6 +115,9 @@ Among linked records of the same real Game, the one that counts. The others are 
 **Alias**:
 Another name under which a Team, Player or Character is known.
 
+**Current Game**:
+The last Game in the Series, voided or not.
+
 **Game Status**:
 Where a Game stands: Drafting, Drafted, Closed or Voided.
 
