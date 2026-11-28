@@ -10,11 +10,13 @@ result. Neither field is required, and either can be corrected or cleared throug
 Holder and choice go together (amended 2026-11-27). A save that keeps the same
 holder keeps the stored choice. A save that changes the holder clears the stored
 choice, because it belonged to the other Team. Unsent fields are kept unless that
-would leave them inconsistent, and the timeline form sends the choice only when
-the analyst changed it. A choice always belongs to a holder: Start Game, Replay
-and edits reject a choice without a holder (`choice_without_holder`), through one
-engine rule (`record_first_selection`). The choice field is disabled until a
-holder is selected and is cleared when the holder changes.
+would leave them inconsistent. The UI always sends holder and choice exactly as
+displayed. A choice always belongs to a holder: Start Game, Replay and edits
+reject a choice without a holder (`choice_without_holder`), through one engine
+rule (`record_first_selection`). This is a Structural Invariant (ADR-0009,
+amended): an edit is rejected only when it would create such a choice, and
+database migration 10 clears any stored one, logging each. The choice field is
+disabled until a holder is selected and is cleared when the holder changes.
 Those edits do not create or change Draft Actions, winners or Player Assignments.
 Turn ownership always follows the recorded Draft Positions.
 
@@ -28,6 +30,9 @@ applies it: every setup or Replay request carries the holder the analyst saw, an
 an omitted holder records none. After "Record winner and start", the setup form
 shows the holder the result pre-filled, and the draft begins only when the analyst
 starts it. Prefill can always be changed. Choice starts empty.
+The setup and Replay forms take the suggestion once, when they open. A later
+result changes no field: a notice offers the new suggestion, and only Apply
+changes the holder and clears the choice (amended 2026-11-27).
 
 A Replay computes its default from the previous lower-number Game, never its
 same-number voided source's result or holder. Its choice starts empty. Its
@@ -45,6 +50,8 @@ independent/no-prefill behavior; their Side names use the loaded profile.
 
 Database migration 9 adds nullable metadata columns, preserving existing Game
 facts. Existing schema-8 databases receive a verified automatic backup first.
+Migration 10 clears a choice stored without a holder and logs each one, after a
+verified automatic backup.
 
 ## League rulebook investigation (2026-11-27)
 
