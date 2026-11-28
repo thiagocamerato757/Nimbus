@@ -25,7 +25,6 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [backupNotice, setBackupNotice] = useState('');
-  const [setupNotice, setSetupNotice] = useState('');
   const [correctionImpact, setCorrectionImpact] = useState<string[]>([]);
   const [teamA, setTeamA] = useState('');
   const [teamB, setTeamB] = useState('');
@@ -75,14 +74,10 @@ export default function App() {
   // shown. Both forms share one reducer, so only the analyst moves a holder.
   const [setupForm, dispatchSetup] = useFirstSelectionForm(
     series?.progress.can_start_next ? `${series.id}:${current?.id ?? ''}` : '', series?.next_first_selection_holder ?? '');
-  const setupKey = setupForm.key;
   const replaySource = series?.games.find(game => game.id === replay?.source);
   const [replayForm, dispatchReplay] = useFirstSelectionForm(replay?.source ?? '', replaySource?.first_selection_prefill ?? '');
   const copyBlocked = replay?.choice === 'copy_draft'
     && replay.first !== replaySource?.assignments.find(a => a.position === 'first')?.team_id;
-  useEffect(() => {
-    setSetupNotice('');
-  }, [setupKey]);
   useEffect(() => { setSide(seriesSides[0] ?? ''); }, [series?.id]);
 
   async function load() {
@@ -151,7 +146,7 @@ export default function App() {
   }
 
   async function save(path: string, body?: unknown, expectedVersion?: string, correctedAction?: { game: string; turn: number }, onStale?: () => Promise<void>) {
-    setBusy(true); setError(''); setRejectedRule(''); setCorrectionImpact([]); setSetupNotice('');
+    setBusy(true); setError(''); setRejectedRule(''); setCorrectionImpact([]);
     try {
       const result = await requestSnapshot<Series>(path, body, expectedVersion ?? editVersion ?? version);
       const updated = result.data;
@@ -238,7 +233,6 @@ export default function App() {
       dispatchSetup({ type: 'recorded', prefill });
       if (!afterRecordedWinner(setupForm, prefill).startDraft) {
         setWinnerPrompt(false);
-        setSetupNotice(t('draftNotStarted', { number: nextNumber }));
         return;
       }
     }
@@ -455,8 +449,8 @@ export default function App() {
             <label>{t('firstPick')}<select aria-label={t('firstPick')} value={setupFirst} disabled={series.rule_snapshot.sides_coupled} onChange={e => setFirstPick(e.target.value as TeamId)}>
               {series.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
             <FirstSelectionFields teams={series.teams} form={setupForm} dispatch={dispatchSetup} />
-            <PrefillOffer teams={series.teams} form={setupForm} onApply={() => { dispatchSetup({ type: 'apply' }); setSetupNotice(''); }} />
-            {setupNotice && <p role="status" data-testid="prefill-notice">{setupNotice}</p>}
+            <PrefillOffer teams={series.teams} form={setupForm} onApply={() => dispatchSetup({ type: 'apply' })} />
+            {setupForm.notStarted && <p role="status" data-testid="prefill-notice">{t('draftNotStarted', { number: nextNumber })}</p>}
             <p className="muted">{t('selectionHint')}</p>
             <label>{t('gamePatch')}<input value={gamePatch} placeholder={series.patch ?? ''} onChange={e => setGamePatch(e.target.value)} maxLength={100} /></label>
             <button className="primary" disabled={busy}>{t('startGame', { number: nextNumber })}</button>
