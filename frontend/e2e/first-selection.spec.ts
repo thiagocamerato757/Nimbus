@@ -344,3 +344,29 @@ test('picking the offered holder by hand clears it, and a correction offers agai
   await expect(page.getByTestId('prefill-notice')).toHaveCount(0);
   expect((await (await request.get(`/api/series/${series.id}`)).json()).games).toHaveLength(1);
 });
+
+// Regression from the PR #36 re-review: while "Record winner and start" waits for
+// the server, the setup cannot be edited, so what is recorded is what was shown.
+test('locks the setup while the winner is being recorded', async ({ page, request }) => {
+  const {post, series, path} = await draftedSeries(request, 'Lock Owls', 'Lock Foxes');
+  await post(path + '/winner', {winner: null});
+  let release = () => {};
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/winner', async route => { await held; await route.continue(); });
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Lock Owls vs Lock Foxes', exact: true}).click();
+  const setup = page.locator('.next-game');
+  await setup.getByRole('button', {name: 'Start Game 2', exact: true}).click();
+  const prompt = page.getByRole('dialog', {name: 'Record the previous Game’s winner'});
+  await prompt.getByLabel('Winner').selectOption('A');
+  await prompt.getByRole('button', {name: 'Record winner and start', exact: true}).click();
+  await expect(setup.getByLabel('First Selection holder')).toBeDisabled();
+  await expect(setup.getByLabel('Side for Lock Owls')).toBeDisabled();
+  await expect(setup.getByRole('button', {name: 'Start Game 2', exact: true})).toBeDisabled();
+  release();
+  await expect(setup.getByTestId('prefill-offer')).toContainText('Lock Foxes');
+  await expect(page.getByTestId('prefill-notice')).toBeVisible();
+  await expect(setup.getByLabel('First Selection holder')).toBeEnabled();
+  await expect(setup.getByLabel('Side for Lock Owls')).toBeEnabled();
+  expect((await (await request.get(`/api/series/${series.id}`)).json()).games).toHaveLength(1);
+});

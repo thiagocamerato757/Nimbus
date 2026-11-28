@@ -444,6 +444,8 @@ export default function App() {
         {series.progress.can_start_next ? <section className="next-game panel">
           <div><h2>{t('gameSetup')}</h2><p className="muted">{t(series.rule_snapshot.sides_coupled ? 'coupledSetupHint' : 'gameSetupHint')}</p></div>
           <form onChangeCapture={() => setEditVersion(previous => previous ?? version)} onSubmit={start} className="next-game-form">
+            {/* Nothing can change while a save runs: what is recorded is what was shown. */}
+            <fieldset className="form-lock" disabled={busy}>
             <label>{t('sideFor', { team: teamName('A') })}<select value={side} onChange={e => setSide(e.target.value)}>
               {seriesSides.map(value => <option key={value} value={value}>{value === 'blue' || value === 'red' ? t(value) : value}</option>)}</select></label>
             <label>{t('firstPick')}<select aria-label={t('firstPick')} value={setupFirst} disabled={series.rule_snapshot.sides_coupled} onChange={e => setFirstPick(e.target.value as TeamId)}>
@@ -454,6 +456,7 @@ export default function App() {
             <p className="muted">{t('selectionHint')}</p>
             <label>{t('gamePatch')}<input value={gamePatch} placeholder={series.patch ?? ''} onChange={e => setGamePatch(e.target.value)} maxLength={100} /></label>
             <button className="primary" disabled={busy}>{t('startGame', { number: nextNumber })}</button>
+            </fieldset>
           </form>
         </section> : <p className="muted">{series.progress.ended ? t('seriesEnded') : current?.voided ? t('replay_required') : series.games.filter(g => !g.voided).length >= series.rule_snapshot.series_format.games ? t('allStarted') : t('remaining')}</p>}
         {!!series.games.length && <section className="timeline" data-testid="timeline"><div className="section-title"><h2>{t('timeline')}</h2><p>{t('timelineHint')}</p></div>
