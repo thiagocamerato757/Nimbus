@@ -325,7 +325,7 @@ The developer decided how to resolve the Claude Code review findings above and a
 
 ## Claude Code review of PR #34 fourth round — 2026-11-27
 
-`sail-skills:code-review` ran on this round's diff only, `c5f33d5...e799c56`: commits `d521109`, `fd1b9e2` and `e799c56` of [PR #34](https://github.com/thiagocamerato757/Nimbus/pull/34). The fix issues are [#13](https://github.com/thiagocamerato757/Nimbus/issues/13) and [#14](https://github.com/thiagocamerato757/Nimbus/issues/14). The review started at 21:06Z, after the push; there was no handoff pause between the push and the review.
+`sail-skills:code-review` ran on this round's diff only, `c5f33d5...e799c56`: commits `d521109`, `fd1b9e2` and `e799c56` of [PR #34](https://github.com/thiagocamerato757/Nimbus/pull/34). The fix issues are [#13](https://github.com/thiagocamerato757/Nimbus/issues/13) and [#14](https://github.com/thiagocamerato757/Nimbus/issues/14). The reviewers ran from 21:06:27Z to 21:10:27Z (session transcript); there was no handoff pause between the push and the review.
 
 - **Agents and usage:**
   - Claude Code primary agent (Opus 5.5), plus two parallel Claude reviewers.
@@ -357,7 +357,7 @@ The developer decided how to resolve the Claude Code review findings above and a
 
 [PR #34](https://github.com/thiagocamerato757/Nimbus/pull/34). The fix issues are [#13](https://github.com/thiagocamerato757/Nimbus/issues/13) and [#14](https://github.com/thiagocamerato757/Nimbus/issues/14). Remaining smells are in [#35](https://github.com/thiagocamerato757/Nimbus/issues/35).
 
-**Pause and handoff:** the fourth-round review ended at about 21:10Z. The developer's decisions arrived, and this round started at 21:14:16Z. No agent ran in between.
+**Pause and handoff:** the fourth-round reviewers finished at 21:10:27Z. The developer's decisions arrived, and this round started at 21:14:16Z. No agent ran in between.
 
 **Developer decisions applied:**
 - **Finding 3, option A.** A choice always belongs to a holder. `record_first_selection` is one engine rule used by Start Game, Replay and timeline edits, and a choice without a holder is rejected everywhere with `choice_without_holder`.
@@ -379,6 +379,74 @@ The developer decided how to resolve the Claude Code review findings above and a
 - Mutation check: with the screen's Series as the baseline, the stale-panel journey fails.
 - The new tests failed first.
 
-**Evidence:** this round's commits on `feat/issues-11-14`.
+**Evidence:** commits [`0a536d8`](https://github.com/thiagocamerato757/Nimbus/commit/0a536d8), [`c0d8133`](https://github.com/thiagocamerato757/Nimbus/commit/c0d8133) and [`8162e0e`](https://github.com/thiagocamerato757/Nimbus/commit/8162e0e).
 
 **Claude review:** pending; it covers this round's diff only, under the same stopping rule.
+
+## Claude Code review of PR #34 fifth round — 2026-11-27
+
+`sail-skills:code-review` ran on this round's diff only, `e799c56...8162e0e`: commits [`0a536d8`](https://github.com/thiagocamerato757/Nimbus/commit/0a536d8), [`c0d8133`](https://github.com/thiagocamerato757/Nimbus/commit/c0d8133) and [`8162e0e`](https://github.com/thiagocamerato757/Nimbus/commit/8162e0e) of [PR #34](https://github.com/thiagocamerato757/Nimbus/pull/34), for issues #13 and #14.
+
+- **Time:** 21:26:32Z–21:30:12Z UTC, about 3m 40s elapsed. There was no pause between the push and the review.
+- **Agents and usage:**
+  - Claude Code primary agent (Opus 5.5), plus two parallel Claude reviewers.
+  - Standards reviewer: 59,680 tokens, 73s.
+  - Spec reviewer: 78,921 tokens, 199s.
+  - Total: 138,601 tokens, reviewers only, as reported by the harness. The split, primary-agent tokens and billing are unavailable.
+- **Verification:**
+  - The Spec reviewer ran the 3 new pytest tests (5 passed) and two scratch Playwright journeys with their own temporary data directory. These reproduced findings 1 and 2.
+  - The primary agent re-read `App.tsx:76-78` and `App.tsx:487`.
+- **Claude review status: completed, changes requested.** There are reproduced Spec findings, so PR #34 was **not** merged.
+- **Spec findings:**
+  1. **"B chose side" still cannot be recorded in one save when A had chosen side (reproduced).** The timeline form sends the choice only when it differs from the stored one, so the engine sees a new holder and clears it.
+  2. **A choice survives when a pre-filled holder changes (reproduced, setup form).** A live refresh changes the shown holder without the analyst's input, so the setup could record "A chose side", which nobody entered. The Replay setup has the same pattern (read only).
+  3. Read only: a legacy holderless choice makes an empty API edit fail with `choice_without_holder`.
+- **Standards findings:**
+  - Hard: the fifth-round record names its evidence without commit links, and the fourth review lacks an end time with seconds.
+  - Judgement calls:
+    - `choice_without_holder` is an absolute rule without an ADR note (ADR 0010: "Only Structural Invariants are absolute").
+    - The spec bullet has no "(amends …)" tag.
+    - `_Outcome` mirrors `SeriesProgress` under other names.
+    - `record_first_selection` takes a field-name dict.
+    - `except ValueError` maps every error to one message.
+    - The controlled/uncontrolled branching in `FirstSelectionFields` is repeated per field.
+- **Fixes:** none applied; awaiting the developer.
+
+## PR #34 sixth round — 2026-11-27 to 2026-11-28
+
+[PR #34](https://github.com/thiagocamerato757/Nimbus/pull/34), issues [#13](https://github.com/thiagocamerato757/Nimbus/issues/13) and [#14](https://github.com/thiagocamerato757/Nimbus/issues/14); remaining smells in [#35](https://github.com/thiagocamerato757/Nimbus/issues/35).
+
+**Developer decisions applied:**
+- The UI sends holder and choice exactly as displayed.
+- The setup and Replay forms take their pre-fill once, when they open. A later result is offered with Apply, and only Apply or the analyst changes a field.
+- An edit is rejected only when it would create a choice without a holder. Migration 10 clears stored ones, logging each, after a verified backup.
+- "Choice without holder" is a Structural Invariant (ADR 0009 and 0010 amendments). The spec bullet has its "(amends …)" tag.
+
+**Run:**
+- Time: 2026-11-27T21:32:52Z to the review start, UTC.
+- **Pause:** 2026-11-27T21:32:52Z–2026-11-28T02:23:41Z (4h 50m 48s), with no commands, until the developer sent "continue".
+- Agents: the Claude Code primary agent only (Sonnet 5.5).
+- **First attempt: No.** A scripted engine edit did not match the formatted source and wrote nothing, so it was redone. Lint then asked for combined `with` statements in the new migration test.
+- Planned test change: the coupled-profile journey expected a background result to change the holder, which this round reverses. It now expects the offer and applies it.
+
+**Validation:**
+- `uv run --frozen pytest -q tests`: 293 passed.
+- `npx playwright test`: 22 passed.
+- `ruff check`, `ruff format --check`, `mypy`, `git diff --check` and `npm run build`: passed.
+- The new engine, migration and journey tests failed first. The new journeys also fail against the previous `App.tsx`.
+
+## Primary-agent usage for the PR #34 review and fix rounds
+
+Source: session transcript `08b0379a-9ce6-4010-9823-48089e53b9dc`, with each provider response counted once by message id. This replaces the "primary-agent tokens unavailable" notes above. Subagent figures stay as reported in each section, and billing and credits are unavailable. Input is uncached input plus cache writes plus cache reads.
+
+| Interval (UTC, 2026-11-27) | Work | Input | of which cache read | Output |
+|---|---|---|---|---|
+| 19:30:00–19:41:52 | First review (includes the interrupted attempt) | 1,021,744 | 874,870 | 17,433 |
+| 19:41:52–20:10:00 | Fix round 1 | 10,289,213 | 10,114,199 | 77,850 |
+| 20:10:00–20:25:13 | Fix round 2 and review | 4,222,886 | 4,186,420 | 28,611 |
+| 20:25:13–20:44:20 | Fix round 3 | 7,348,335 | 7,310,185 | 30,255 |
+| 20:44:20–20:54:26 | Review after round 3 | 2,387,802 | 2,372,039 | 15,669 |
+| 20:54:26–21:06:07 | Fix round 4 | 5,168,943 | 5,134,809 | 29,347 |
+| 21:06:07–21:14:16 | Review of round 4 | 1,955,488 | 1,941,096 | 10,943 |
+| 21:14:16–21:26:14 | Fix round 5 | 4,477,419 | 4,456,755 | 19,478 |
+| 21:26:14–21:32:52 | Review of round 5 | 2,049,425 | 1,679,494 | 13,954 |
