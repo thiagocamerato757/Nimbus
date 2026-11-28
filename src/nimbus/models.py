@@ -70,6 +70,7 @@ class SeriesFormat(Value):
 
 
 class RuleSnapshot(Value):
+    disabled_characters: tuple[str, ...] = ()
     sides: tuple[str, str] | None = None
     sides_coupled: bool = False
     first_pick_side: str | None = None
@@ -205,6 +206,7 @@ class PlayerPool(Value):
 
 
 class DraftState(Value):
+    disabled_characters: tuple[str, ...] = ()
     status: Literal["Drafting", "Drafted", "Closed", "Voided"] = "Drafting"
     result_pending: bool = False
     missing: tuple[str, ...] = ()

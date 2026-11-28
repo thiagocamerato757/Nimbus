@@ -1,5 +1,9 @@
 // All interface copy is keyed here; profile and user-entered names are data.
 const en = {
+  seriesDisabled: 'Series Disabled List', workspaceDisabled: 'Workspace Disabled List',
+  workspaceDisabledHint: 'Copied to new Series. Existing Series keep their own list.',
+  disabledCharacters: 'Disabled Characters', saveDisabled: 'Save Disabled List',
+  disabled_character: 'This Character is on the Series Disabled List. An Override is required.',
   selectionHolder: 'First Selection holder', selectionChoice: 'First Selection choice',
   noSelectionHolder: 'No holder recorded', noSelectionChoice: 'No choice recorded',
   choseSide: 'Chose Side', chosePosition: 'Chose Draft Position', saveSelection: 'Save First Selection',

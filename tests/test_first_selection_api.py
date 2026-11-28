@@ -405,7 +405,8 @@ def test_bs012_schema9_migration_clears_and_logs_orphan_choices(tmp_path, caplog
     assert len(logged) == 1 and second["id"] in logged[0] and "side" in logged[0]
     assert len(backups) == 1 and backups[0]["verified"]
     with sqlite3.connect(data / "nimbus.sqlite3") as db:
-        assert db.execute("PRAGMA user_version").fetchone() == (10,)
+        # Migration continues through the current Disabled List schema.
+        assert db.execute("PRAGMA user_version").fetchone() == (11,)
     caplog.clear()
     with (
         caplog.at_level(logging.WARNING, logger="nimbus.store"),

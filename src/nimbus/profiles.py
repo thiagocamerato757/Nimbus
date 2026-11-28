@@ -168,3 +168,20 @@ def load_profiles(
             + ", ".join(sorted(missing_profiles))
         )
     return result
+
+
+def refresh_catalog(profile: TitleProfile, path: Path) -> TitleProfile:
+    """Refresh only Characters, leaving loaded Title rules untouched."""
+    try:
+        catalog = CatalogFile.model_validate(yaml.safe_load(path.read_text()))
+    except (OSError, yaml.YAMLError, ValidationError) as error:
+        raise ProfileLoadError(f"{path}: {error}") from error
+    missing = {c.id for c in profile.catalog} - {c.id for c in catalog.characters}
+    if missing:
+        raise ProfileLoadError(
+            f"{path}: Characters must be Retired, never deleted: {', '.join(sorted(missing))}"
+        )
+    return profile.model_copy(update={
+        "catalog": catalog.characters,
+        "data_dragon_version": catalog.data_dragon_version,
+    })

@@ -60,7 +60,7 @@ class Store:
         with self.connection() as connection:
             connection.execute("PRAGMA journal_mode=WAL")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version in (1, 2, 3, 4, 5, 6, 7, 8, 9):
+            if version in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10):
                 self.create_backup("migration")
             if version == 0:
                 migration = Path(__file__).with_name("migrations") / "001_initial.sql"
@@ -152,7 +152,14 @@ class Store:
             if version == 9:
                 self._clear_orphan_choices(connection)
                 version = 10
-            if version != 10:
+            if version == 10:
+                connection.executescript(
+                    "BEGIN; CREATE TABLE IF NOT EXISTS workspace_disabled "
+                    "(profile_id TEXT PRIMARY KEY, character_ids TEXT NOT NULL); "
+                    "PRAGMA user_version = 11; COMMIT;"
+                )
+                version = 11
+            if version != 11:
                 raise RuntimeError(f"Unsupported Nimbus database schema: {version}")
 
     @staticmethod
@@ -308,6 +315,28 @@ class Store:
                     series.patch,
                     series.record_type,
                 ),
+            )
+
+    def workspace_disabled(self) -> dict[str, tuple[str, ...]]:
+        with self.connection() as connection:
+            return {
+                row["profile_id"]: tuple(json.loads(row["character_ids"]))
+                for row in connection.execute("SELECT * FROM workspace_disabled")
+            }
+
+    def set_workspace_disabled(self, profile_id: str, character_ids: tuple[str, ...]) -> None:
+        with self.connection() as connection:
+            connection.execute(
+                "INSERT INTO workspace_disabled VALUES (?, ?) ON CONFLICT(profile_id) "
+                "DO UPDATE SET character_ids = excluded.character_ids",
+                (profile_id, json.dumps(character_ids)),
+            )
+
+    def save_rules(self, series: Series) -> None:
+        with self.connection() as connection:
+            connection.execute(
+                "UPDATE series SET rule_snapshot = ? WHERE id = ?",
+                (series.rule_snapshot.model_dump_json(), series.id),
             )
 
     def add_game(self, series_id: str, game: Game) -> None:

@@ -222,7 +222,7 @@ def _base_state(
     }
     available = {
         team: tuple(
-            sorted(c.id for c in catalog if not c.retired and c.id not in locked[team] | used[team])
+            sorted(c.id for c in catalog if not c.retired and c.id not in locked[team] | used[team] | set(settings.disabled_characters))
         )
         for team in teams
     }
@@ -258,6 +258,7 @@ def _base_state(
         ),
         result_pending=complete and game.winner is None and not game.voided,
         missing=() if game.voided else tuple(missing),
+        disabled_characters=settings.disabled_characters,
         locks={team: tuple(sorted(locked[team])) for team in teams},
         available=available,
         next_turn=next_turn,
@@ -270,7 +271,7 @@ def derive_player_pool(
 ) -> PlayerPool:
     """A Player's pools follow Team availability, whoever played each Character."""
     return PlayerPool(
-        remaining=tuple(sorted(set(declared_pool) - set(state.locks[team_id]))),
+        remaining=tuple(sorted(set(declared_pool) - set(state.locks[team_id]) - set(state.disabled_characters))),
         available_now=tuple(sorted(set(declared_pool) & set(state.available[team_id]))),
     )
 
@@ -335,13 +336,16 @@ def check_entry(
     return validate_action(settings, catalog, games, game, action)
 
 
-GAME_RULES = {"fearless_lock", "wasted_ban", "duplicate_character"}
+GAME_RULES = {"fearless_lock", "wasted_ban", "duplicate_character", "disabled_character"}
 
 
 def _fingerprint(
     settings: RuleSnapshot, rule: str, games: Sequence[Game], game: Game, action: DraftAction
 ) -> str:
-    if rule == "duplicate_character":
+    causes: list[tuple[str, object]]
+    if rule == "disabled_character":
+        causes = [("disabled_character", action.character_id)]
+    elif rule == "duplicate_character":
         causes = [
             (game.id, a.model_dump()) for a in game.actions if a.character_id == action.character_id
         ]
@@ -380,6 +384,8 @@ def _rules(
     if action.character_id is None:
         return ()
     rules = []
+    if action.character_id in settings.disabled_characters:
+        rules.append("disabled_character")
     state = _base_state(settings, catalog, games, game)
     if action.kind == "pick" and action.character_id in state.locks[action.team_id]:
         rules.append("fearless_lock")

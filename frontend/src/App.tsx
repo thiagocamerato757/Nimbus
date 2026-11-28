@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { DisabledList } from './DisabledList';
 import { ApiError, request, requestSnapshot } from './api';
 import { useLiveQuery } from './useLiveQuery';
 import { errorText, t } from './i18n';
@@ -9,6 +10,8 @@ import type { Player, RosterTeam, Game, Profile, Series, TeamId, Fearless } from
 
 export default function App() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const liveProfiles = useLiveQuery<Profile[]>('/profiles');
+  useEffect(() => { if (liveProfiles.snapshot) setProfiles(liveProfiles.snapshot.data); }, [liveProfiles.snapshot]);
   const workspace = useLiveQuery<Series[]>('/series');
   const people = useLiveQuery<Player[]>('/players');
   const teams = useLiveQuery<RosterTeam[]>('/teams');
@@ -174,7 +177,7 @@ export default function App() {
       return result;
     } catch (e) {
       setError(errorText(e instanceof ApiError ? e.code : 'unexpected'));
-      if (e instanceof ApiError && ['fearless_lock', 'wasted_ban', 'duplicate_character'].includes(e.code)) setRejectedRule(e.code);
+      if (e instanceof ApiError && ['fearless_lock', 'wasted_ban', 'duplicate_character', 'disabled_character'].includes(e.code)) setRejectedRule(e.code);
       if (e instanceof ApiError && e.code === 'stale_version') {
         setCharacter(''); setEditVersion(null); setCorrection(null);
         await (onStale ? onStale() : workspace.refresh());
@@ -341,7 +344,9 @@ export default function App() {
           <label>{t('seriesPatch')}<input value={patch} onChange={e => setPatch(e.target.value)} maxLength={100} /></label>
           <button className="primary" disabled={busy || !profile || invalidCombination}>{busy ? t('saving') : t('create')}</button>
         </form>
+        {creationProfile && <DisabledList key={creationProfile.id} profile={creationProfile} onSaved={() => { setEditVersion(null); void workspace.refresh(); }} />}
       </section> : <>
+        {profile && <DisabledList key={series.id} profile={profile} seriesId={series.id} onSaved={() => { void workspace.refresh(); }} />}
         <p data-testid="series-score">{series.teams.map(team => `${team.name} ${series.progress.score[team.id]}`).join(' · ')}{series.progress.ended && <> · {t('seriesEnded')}</>}</p>
         {!!series.progress.games_past_decision.length && <p role="alert">{t('pastDecision', { number: series.progress.deciding_game! })}</p>}
         {current?.voided && !replay && !series.progress.ended && <button disabled={busy} onClick={setupReplay}>{t('replayGame', {number: current.number})}</button>}
