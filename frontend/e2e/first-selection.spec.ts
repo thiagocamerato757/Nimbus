@@ -99,11 +99,11 @@ test('shows pending/known-result holder prefill and explicit coupled Draft Posit
   await post(path + '/winner', {winner: 'A'});
   // #14 (amended 2026-11-27): the pre-fill is computed once when the form opens;
   // a later result is offered, never applied behind the analyst.
-  await expect(setup.getByTestId('suggestion-notice')).toContainText('the suggested holder would be Coupled Foxes. Apply?');
+  await expect(setup.getByTestId('prefill-offer')).toContainText('the suggested holder would be Coupled Foxes. Apply?');
   await expect(setup.getByLabel('First Selection holder')).toHaveValue('');
   await setup.getByRole('button', {name: 'Apply', exact: true}).click();
   await expect(setup.getByLabel('First Selection holder')).toHaveValue('B');
-  await expect(setup.getByTestId('suggestion-notice')).toHaveCount(0);
+  await expect(setup.getByTestId('prefill-offer')).toHaveCount(0);
   await expect(setup.getByLabel('First-pick Team', {exact: true})).toBeDisabled();
   await expect(setup.getByLabel('First-pick Team', {exact: true})).toHaveValue('B');
   await setup.getByLabel('Side for Coupled Owls').selectOption('red');
@@ -113,10 +113,10 @@ test('shows pending/known-result holder prefill and explicit coupled Draft Posit
   await expect(page.getByRole('heading', {name: 'Turn 1 · Coupled Owls · Ban'})).toBeVisible();
 });
 
-// Parent BS-012 / #14 (amended 2026-11-27): the server never applies a pre-fill
-// the analyst has not seen. "Record winner and start" stops to show the holder
-// the result pre-filled; the draft begins only when the analyst starts it.
-test('shows the pre-filled holder after recording the winner before the draft begins', async ({ page, request }) => {
+// Parent BS-012 / #14 (amended 2026-11-28): "Record winner and start" with a
+// different pre-fill starts no draft and changes no field. The offer is shown,
+// and the analyst Applies or presses Start again.
+test('offers the new pre-fill after recording the winner before the draft begins', async ({ page, request }) => {
   async function post(path: string, data: unknown) {
     const current = await request.get('/api/series');
     const response = await request.post(path, {headers: {
@@ -142,11 +142,14 @@ test('shows the pre-filled holder after recording the winner before the draft be
   await prompt.getByLabel('Winner').selectOption('A');
   await prompt.getByRole('button', {name: 'Record winner and start', exact: true}).click();
   await expect(prompt).toHaveCount(0);
-  await expect(page.getByTestId('prefill-notice')).toHaveText('First Selection holder pre-filled from the result: Prefill Foxes. Check it, then start Game 2.');
-  await expect(setup.getByLabel('First Selection holder')).toHaveValue('B');
+  await expect(page.getByTestId('prefill-notice')).toHaveText('The winner is recorded and the draft has not started. Apply the offer or press Start Game 2 again.');
+  await expect(setup.getByTestId('prefill-offer')).toContainText('the suggested holder would be Prefill Foxes. Apply?');
+  await expect(setup.getByLabel('First Selection holder')).toHaveValue('');
   const before = await (await request.get(`/api/series/${series.id}`)).json();
   expect(before.games).toHaveLength(1);
   expect(before.games[0].winner).toBe('A');
+  await setup.getByRole('button', {name: 'Apply', exact: true}).click();
+  await expect(setup.getByLabel('First Selection holder')).toHaveValue('B');
   await setup.getByRole('button', {name: 'Start Game 2', exact: true}).click();
   await expect(page.getByTestId('draft-progress')).toHaveText('0 / 20 turns');
   const after = await (await request.get(`/api/series/${series.id}`)).json();
@@ -180,7 +183,7 @@ async function draftedSeries(request: import('@playwright/test').APIRequestConte
 }
 
 // Parent BS-012 / #14 (amended 2026-11-27): a winner correction while the setup
-// form is open changes nothing on screen. The new suggestion is offered; only
+// form is open changes nothing on screen. The new pre-fill is offered; only
 // applying it changes the holder and clears the choice.
 test('a winner correction while the setup is open offers the new holder without changing fields', async ({ page, request }) => {
   const {post, series, path} = await draftedSeries(request, 'Offer Owls', 'Offer Foxes');
@@ -190,17 +193,17 @@ test('a winner correction while the setup is open offers the new holder without 
   await expect(setup.getByLabel('First Selection holder')).toHaveValue('B');
   await setup.getByLabel('First Selection choice').selectOption('side');
   await post(path + '/winner', {winner: 'B'});
-  await expect(setup.getByTestId('suggestion-notice')).toContainText('With the current result, the suggested holder would be Offer Owls. Apply?');
+  await expect(setup.getByTestId('prefill-offer')).toContainText('With the current result, the suggested holder would be Offer Owls. Apply?');
   await expect(setup.getByLabel('First Selection holder')).toHaveValue('B');
   await expect(setup.getByLabel('First Selection choice')).toHaveValue('side');
   await setup.getByRole('button', {name: 'Apply', exact: true}).click();
   await expect(setup.getByLabel('First Selection holder')).toHaveValue('A');
   await expect(setup.getByLabel('First Selection choice')).toHaveValue('');
-  await expect(setup.getByTestId('suggestion-notice')).toHaveCount(0);
-  // Ignoring a later suggestion changes nothing; Start records what is shown.
+  await expect(setup.getByTestId('prefill-offer')).toHaveCount(0);
+  // Ignoring a later offer changes nothing; Start records what is shown.
   await setup.getByLabel('First Selection choice').selectOption('draft_position');
   await post(path + '/winner', {winner: 'A'});
-  await expect(setup.getByTestId('suggestion-notice')).toContainText('Offer Foxes');
+  await expect(setup.getByTestId('prefill-offer')).toContainText('Offer Foxes');
   await setup.getByRole('button', {name: 'Start Game 2', exact: true}).click();
   await expect(page.getByText('This edit is outdated. The latest state is shown. Review it and try again.')).toBeVisible();
   await expect(setup.getByLabel('First Selection holder')).toHaveValue('A');
@@ -225,7 +228,7 @@ test('a winner correction while the Replay setup is open offers the new holder',
   await expect(setup.getByLabel('First Selection holder')).toHaveValue('B');
   await setup.getByLabel('First Selection choice').selectOption('side');
   await post(path + '/winner', {winner: 'B'});
-  await expect(setup.getByTestId('suggestion-notice')).toContainText('the suggested holder would be Redo Owls. Apply?');
+  await expect(setup.getByTestId('prefill-offer')).toContainText('the suggested holder would be Redo Owls. Apply?');
   await expect(setup.getByLabel('First Selection holder')).toHaveValue('B');
   await expect(setup.getByLabel('First Selection choice')).toHaveValue('side');
   await setup.getByRole('button', {name: 'Apply', exact: true}).click();
@@ -237,4 +240,52 @@ test('a winner correction while the Replay setup is open offers the new holder',
   const saved = await (await request.get(`/api/series/${series.id}`)).json();
   expect(saved.games[2].first_selection_holder).toBe('A');
   expect(saved.games[2].first_selection_choice).toBeNull();
+});
+
+// Regression from the sixth PR #34 review: recording a different winner must not
+// move the holder under a choice; pressing Start again records what is shown.
+test('recording another winner never moves a choice to the other Team', async ({ page, request }) => {
+  const {post, series, path} = await draftedSeries(request, 'Keep Owls', 'Keep Foxes');
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Keep Owls vs Keep Foxes', exact: true}).click();
+  const setup = page.locator('.next-game');
+  await expect(setup.getByLabel('First Selection holder')).toHaveValue('B');
+  await post(path + '/winner', {winner: null});
+  await expect(setup.getByTestId('prefill-offer')).toContainText('there is no suggested holder');
+  await setup.getByLabel('First Selection choice').selectOption('side');
+  await setup.getByRole('button', {name: 'Start Game 2', exact: true}).click();
+  const prompt = page.getByRole('dialog', {name: 'Record the previous Game’s winner'});
+  await prompt.getByLabel('Winner').selectOption('B');
+  await prompt.getByRole('button', {name: 'Record winner and start', exact: true}).click();
+  await expect(setup.getByTestId('prefill-offer')).toContainText('Keep Owls');
+  await expect(setup.getByLabel('First Selection holder')).toHaveValue('B');
+  await expect(setup.getByLabel('First Selection choice')).toHaveValue('side');
+  expect((await (await request.get(`/api/series/${series.id}`)).json()).games).toHaveLength(1);
+  await setup.getByRole('button', {name: 'Start Game 2', exact: true}).click();
+  await expect(page.getByTestId('draft-progress')).toHaveText('0 / 20 turns');
+  const saved = await (await request.get(`/api/series/${series.id}`)).json();
+  expect(saved.games[1].first_selection_holder).toBe('B');
+  expect(saved.games[1].first_selection_choice).toBe('side');
+});
+
+// Regression from the sixth PR #34 review: an applied pre-fill is not a reason to
+// start unseen; a later "Record winner and start" still stops and offers.
+test('after Apply, a different recorded result still stops before the draft', async ({ page, request }) => {
+  const {post, series, path} = await draftedSeries(request, 'Again Owls', 'Again Foxes');
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Again Owls vs Again Foxes', exact: true}).click();
+  const setup = page.locator('.next-game');
+  await expect(setup.getByLabel('First Selection holder')).toHaveValue('B');
+  await post(path + '/winner', {winner: 'B'});
+  await setup.getByRole('button', {name: 'Apply', exact: true}).click();
+  await expect(setup.getByLabel('First Selection holder')).toHaveValue('A');
+  await post(path + '/winner', {winner: null});
+  await expect(setup.getByTestId('prefill-offer')).toContainText('there is no suggested holder');
+  await setup.getByRole('button', {name: 'Start Game 2', exact: true}).click();
+  const prompt = page.getByRole('dialog', {name: 'Record the previous Game’s winner'});
+  await prompt.getByLabel('Winner').selectOption('A');
+  await prompt.getByRole('button', {name: 'Record winner and start', exact: true}).click();
+  await expect(setup.getByTestId('prefill-offer')).toContainText('Again Foxes');
+  await expect(setup.getByLabel('First Selection holder')).toHaveValue('A');
+  expect((await (await request.get(`/api/series/${series.id}`)).json()).games).toHaveLength(1);
 });
