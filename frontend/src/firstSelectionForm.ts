@@ -20,7 +20,9 @@ export type FirstSelectionAction =
   | { type: 'sync'; key: string; prefill: TeamId | '' }
   | { type: 'holder'; holder: TeamId | '' }
   | { type: 'choice'; choice: Choice | '' }
-  | { type: 'apply' };
+  | { type: 'apply' }
+  // The analyst recorded the previous winner on the way to starting the draft.
+  | { type: 'recorded'; prefill: TeamId | '' };
 
 export const closedForm: FirstSelectionForm = { key: '', holder: '', choice: '', taken: '', latest: '' };
 
@@ -49,14 +51,27 @@ export function firstSelectionReducer(form: FirstSelectionForm, action: FirstSel
       const offered = offeredPrefill(form);
       return offered === null ? form : { ...withHolder(form, offered), taken: offered };
     }
+    case 'recorded': {
+      const { prefill } = action;
+      // A pre-fill the draft stops for must be offered, even if it was taken before.
+      return { ...form, latest: prefill, taken: startsAfterRecording(form, prefill) ? form.taken : form.holder };
+    }
   }
 }
 
-// "Record winner and start": the draft starts only when the recorded result
-// offers nothing new; otherwise the analyst Applies or presses Start again.
+// "Different" means different from the holder shown (docs/spec/mvp.md, amended
+// 2026-11-28). With no new pre-fill, nothing unseen would be recorded.
+function startsAfterRecording(form: FirstSelectionForm, prefill: TeamId | '') {
+  return prefill === '' || prefill === form.holder;
+}
+
+// "Record winner and start": the draft does not start when the recorded result
+// names another Team than the holder shown; the analyst Applies or starts again.
 export function afterRecordedWinner(form: FirstSelectionForm, prefill: TeamId | '') {
-  const next = firstSelectionReducer(form, { type: 'sync', key: form.key, prefill });
-  return { form: next, startDraft: offeredPrefill(next) === null };
+  return {
+    form: firstSelectionReducer(form, { type: 'recorded', prefill }),
+    startDraft: startsAfterRecording(form, prefill),
+  };
 }
 
 // A request carries holder and choice exactly as displayed.

@@ -289,3 +289,27 @@ test('after Apply, a different recorded result still stops before the draft', as
   await expect(setup.getByLabel('First Selection holder')).toHaveValue('A');
   expect((await (await request.get(`/api/series/${series.id}`)).json()).games).toHaveLength(1);
 });
+
+// docs/spec/mvp.md (amended 2026-11-28): "different" means different from the
+// holder shown, even when the result gives the pre-fill the form opened with.
+test('stops and offers when the recorded result differs from the holder shown', async ({ page, request }) => {
+  const {post, series, path} = await draftedSeries(request, 'Shown Owls', 'Shown Foxes');
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Shown Owls vs Shown Foxes', exact: true}).click();
+  const setup = page.locator('.next-game');
+  await expect(setup.getByLabel('First Selection holder')).toHaveValue('B');
+  await post(path + '/winner', {winner: null});
+  await expect(setup.getByTestId('prefill-offer')).toContainText('there is no suggested holder');
+  await setup.getByLabel('First Selection holder').selectOption('A');
+  await setup.getByRole('button', {name: 'Start Game 2', exact: true}).click();
+  const prompt = page.getByRole('dialog', {name: 'Record the previous Game’s winner'});
+  await prompt.getByLabel('Winner').selectOption('A');
+  await prompt.getByRole('button', {name: 'Record winner and start', exact: true}).click();
+  await expect(setup.getByTestId('prefill-offer')).toContainText('Shown Foxes');
+  await expect(setup.getByLabel('First Selection holder')).toHaveValue('A');
+  expect((await (await request.get(`/api/series/${series.id}`)).json()).games).toHaveLength(1);
+  await setup.getByRole('button', {name: 'Start Game 2', exact: true}).click();
+  await expect(page.getByTestId('draft-progress')).toHaveText('0 / 20 turns');
+  const saved = await (await request.get(`/api/series/${series.id}`)).json();
+  expect(saved.games[1].first_selection_holder).toBe('A');
+});

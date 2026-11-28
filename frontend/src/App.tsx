@@ -234,7 +234,9 @@ export default function App() {
       if (!result) return;
       expectedVersion = result.version;
       if (!result.data.progress.can_start_next) { setWinnerPrompt(false); return; }
-      if (!afterRecordedWinner(setupForm, result.data.next_first_selection_holder ?? '').startDraft) {
+      const prefill = result.data.next_first_selection_holder ?? '';
+      dispatchSetup({ type: 'recorded', prefill });
+      if (!afterRecordedWinner(setupForm, prefill).startDraft) {
         setWinnerPrompt(false);
         setSetupNotice(t('draftNotStarted', { number: nextNumber }));
         return;
