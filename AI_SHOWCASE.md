@@ -482,3 +482,30 @@ Source: session transcript `08b0379a-9ce6-4010-9823-48089e53b9dc`, with each pro
   - The setup form's reset is split between render and an effect.
 
 **Fixes:** none applied; awaiting the developer.
+
+## PR #34 seventh round — 2026-11-28
+
+[PR #34](https://github.com/thiagocamerato757/Nimbus/pull/34), issues [#13](https://github.com/thiagocamerato757/Nimbus/issues/13) and [#14](https://github.com/thiagocamerato757/Nimbus/issues/14); remaining smells in [#35](https://github.com/thiagocamerato757/Nimbus/issues/35).
+
+**Developer decision (option A):** only the analyst's own change or Apply moves the holder. A different First Selection pre-fill from "Record winner and start" starts no draft and is offered. The spec sentence about an automatic update, which the primary agent had added without a decision, is removed.
+
+**Changes:**
+- One reducer (`frontend/src/firstSelectionForm.ts`) holds the logic of the setup, Replay and timeline forms. The timeline form uses it too, so the choice-clearing rule exists once.
+- Vitest added with 15 unit tests (`npm run test:unit`).
+- "Suggestion" renamed to "First Selection pre-fill"; the term is added to `CONTEXT.md`.
+- The sixth review record was committed first, in `f2bf985`.
+
+**Run:**
+- Time: 2026-11-28T02:45:07Z–2026-11-28T02:54:19Z, 9m 12s elapsed. No pause.
+- Agents: the Claude Code primary agent only (Sonnet 5.5).
+- Usage: 4,783,484 input tokens, of which 4,756,742 cache read, and 18,983 output (session transcript, up to this record). Billing and credits are unavailable.
+- **First attempt: No.** One new journey changed a winner from outside after the analyst had edited the form, so the save was correctly rejected as stale; the journey's step order was fixed.
+- Planned test change: the "Record winner and start" journey expected the automatic holder update, which this round removes.
+
+**Validation:**
+- `npm run test:unit`: 15 passed. They failed before the module existed, and three planted reducer bugs are each caught.
+- `npx playwright test`: 24 passed.
+- `uv run --frozen pytest -q tests`: 293 passed.
+- `ruff check`, `mypy`, `git diff --check` and `npm run build`: passed.
+
+**Claude review:** pending; it covers this round's diff only, under the same stopping rule.
