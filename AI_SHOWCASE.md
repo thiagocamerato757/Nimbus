@@ -450,3 +450,35 @@ Source: session transcript `08b0379a-9ce6-4010-9823-48089e53b9dc`, with each pro
 | 21:06:07–21:14:16 | Review of round 4 | 1,955,488 | 1,941,096 | 10,943 |
 | 21:14:16–21:26:14 | Fix round 5 | 4,477,419 | 4,456,755 | 19,478 |
 | 21:26:14–21:32:52 | Review of round 5 | 2,049,425 | 1,679,494 | 13,954 |
+
+## Claude Code review of PR #34 sixth round — 2026-11-28
+
+`sail-skills:code-review` ran on this round's diff only, `8162e0e...36fb724`: commits [`bb85bf2`](https://github.com/thiagocamerato757/Nimbus/commit/bb85bf2), [`06d67fd`](https://github.com/thiagocamerato757/Nimbus/commit/06d67fd) and [`36fb724`](https://github.com/thiagocamerato757/Nimbus/commit/36fb724) of [PR #34](https://github.com/thiagocamerato757/Nimbus/pull/34), for issues #13 and #14.
+
+**Completion of the sixth-round record:**
+- Elapsed: 2026-11-27T21:32:52Z–2026-11-28T02:37:12Z (5h 4m 20s). Excluding the 4h 50m 48s pause, 13m 32s.
+- Primary-agent usage: 5,441,684 input tokens, of which 5,048,785 cache read, and 22,943 output (session transcript, each response once). No subagents. Billing and credits are unavailable.
+- Evidence: the three commits above.
+
+**Review run:**
+- Time: 02:37:20Z–02:40:54Z UTC, about 3m 34s.
+- Reviewers (session transcript):
+  - Standards: 308,013 input, of which 220,655 cache read, and 5,656 output.
+  - Spec: 735,188 input, of which 639,252 cache read, and 14,947 output.
+- Primary agent during the review, up to this record: 816,976 input, of which 808,620 cache read, and 4,248 output. Billing and credits are unavailable.
+- Verification: the Spec reviewer ran a two-test scratch Playwright probe with its own data directory and ports, reproducing both findings. The primary agent re-read `App.tsx` `launchGame` and the Apply handler. No suites were re-run.
+- **Claude review status: completed, changes requested.** There are reproduced Spec findings, so PR #34 was **not** merged.
+
+**Spec findings:**
+1. "Record winner and start" can change the shown holder without clearing the choice, so a choice the other Team's holder never made is saved (reproduced).
+2. After Apply, "Record winner and start" treats the holder as a manual pick, so it starts at once without showing the new pre-fill (reproduced; depends on interpretation).
+- The primary agent also notes that the spec sentence letting "Record winner and start" take the new pre-fill by itself was its own interpretation, not a developer decision.
+
+**Standards findings:**
+- Hard: the sixth-round record lacked elapsed time, usage, evidence links and review status; supplied above.
+- Judgement calls:
+  - "Suggestion" is a glossary term for Copilot options and is reused here for the pre-fill.
+  - The two forms repeat the offer-and-apply logic.
+  - The setup form's reset is split between render and an effect.
+
+**Fixes:** none applied; awaiting the developer.
