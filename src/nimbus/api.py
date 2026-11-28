@@ -13,6 +13,7 @@ from nimbus.engine import (
     correct_action,
     create_replay,
     current_game,
+    derive_player_pool,
     derive_progress,
     derive_state,
     first_selection_prefill,
@@ -196,19 +197,31 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
 
     def view(series: Series) -> SeriesView:
         catalog = profiles()[series.profile_id].catalog
-        games = tuple(
-            GameView(
-                **game.model_dump(),
-                state=derive_state(series.rule_snapshot, catalog, series.games, game),
-                first_selection_prefill=first_selection_prefill(
-                    series.rule_snapshot, series.games, game.number
-                ),
+        players = {player.id: player for player in store.list_players()}
+        games = []
+        for game in series.games:
+            state = derive_state(series.rule_snapshot, catalog, series.games, game)
+            games.append(
+                GameView(
+                    **game.model_dump(),
+                    state=state,
+                    player_pools={
+                        player_id: derive_player_pool(
+                            state,
+                            team_id,
+                            players[player_id].declared_pools.get(series.profile_id, ()),
+                        )
+                        for team_id, lineup in game.lineups.items()
+                        for player_id in lineup
+                    },
+                    first_selection_prefill=first_selection_prefill(
+                        series.rule_snapshot, series.games, game.number
+                    ),
+                )
             )
-            for game in series.games
-        )
         return SeriesView(
             **series.model_dump(exclude={"games"}),
-            games=games,
+            games=tuple(games),
             progress=derive_progress(series.rule_snapshot, series.games),
             next_first_selection_holder=first_selection_prefill(
                 series.rule_snapshot,

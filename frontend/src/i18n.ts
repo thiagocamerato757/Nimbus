@@ -40,6 +40,7 @@ const en = {
   rosters: 'Rosters and Declared Pools', roster: 'Roster', newPlayer: 'New Player name', playerName: 'Player name',
   usualRole: 'Usual Role', createPlayer: 'Create Player', savePlayer: 'Save Player', removePlayer: 'Remove from Roster',
   declaredPool: 'Declared Pool', savePool: 'Save Declared Pool', existingPlayer: 'Existing Player', addPlayer: 'Add to Roster',
+  poolRemaining: '{count} Remaining', poolAvailableNow: '{count} Available Now', emptyPool: 'None',
   choosePlayer: 'Choose a Player', playerIdentity: '{name} · {id}', formerMember: 'Former Roster member',
   lineup: 'Lineup', lineupCount: '{count} / {size} Players', saveLineup: 'Save Lineup',
   lineupHint: 'An incomplete Lineup can be completed later. Each Game keeps its own Lineup.',

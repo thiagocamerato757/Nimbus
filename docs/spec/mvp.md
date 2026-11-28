@@ -1149,7 +1149,7 @@ Before building the Copilot, a prototype (`/prototype`) measures whether the pre
 
 To settle in the ticket that needs each one:
 
-- **Rules:** Available Now when the same Character is allowed twice in a Game; which duplicate carries the Violation.
+- **Rules resolved in #15 (2026-11-28):** allowing the same Character twice means mirroring across opposing Teams only. A pick removes it from the picking Team's Available Now; the opponent keeps it. Bans remove it for both Teams, and later-Game Fearless Locks are unchanged. Same-Team duplicates remain a Game Rule rejection; supporting them would require a future setting. See ADR 0016. The duplicate Violation carrier was resolved in #11 (ADR 0009).
 - **Workflow:** Override reason categories; pre-fill when replaying a Voided Game; changing a Series Format after Games exist; undoing a wrong alias, "same Player" or "same Game" answer; recording live a Game already imported; whether the live Source can be removed; whether Source removal also clears derived Suggestion Log entries.
 - **Data:** CSV column names, date format, encoding, delimiter; origin and updating of the League of Legends catalog.
 - **Figures:** exact formulas for presence, pick rate, win rate, pick priority, recency and "comparable options"; default thresholds; which Games (scrims or not) feed the Copilot for each Team.

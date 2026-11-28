@@ -20,6 +20,13 @@ Concrete cases agreed during design, to be turned into tests.
 - During that Game's draft, one of the 4 is banned and a teammate picks another.
 - The mid Player still has 4 Remaining and has 2 Available Now.
 
+## Mirroring keeps a picked Character available to the opponent
+
+- The Series allows mirroring. Team A picks a Character in the current Game.
+- That Character leaves every Team A Player's Available Now, while Team B Players with it in their Declared Pool still have it Available Now. Reversing the picking Team gives the same result for the other side.
+- A ban removes a Character from Available Now for both Teams. A same-Team duplicate pick still requires an Override; allowing that would require a future setting.
+- Under Hard Fearless, either Team's pick still locks the Character for both Teams in the next Game, including a Character mirrored by both Teams.
+
 ## A correction explains the duplicate on the later turn
 
 - The Series prohibits duplicate Characters within a Game. Turns 7 and 10 initially name different Characters.

@@ -199,6 +199,11 @@ class NextTurn(Value):
     kind: ActionKind
 
 
+class PlayerPool(Value):
+    remaining: tuple[str, ...]
+    available_now: tuple[str, ...]
+
+
 class DraftState(Value):
     status: Literal["Drafting", "Drafted", "Closed", "Voided"] = "Drafting"
     result_pending: bool = False
@@ -214,6 +219,7 @@ class DraftState(Value):
 
 class GameView(Game):
     first_selection_prefill: TeamId | None = None
+    player_pools: dict[str, PlayerPool] = Field(default_factory=dict)
     state: DraftState
 
 

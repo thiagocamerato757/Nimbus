@@ -19,6 +19,7 @@ from nimbus.models import (
     NextTurn,
     Notice,
     OverrideReason,
+    PlayerPool,
     RuleSnapshot,
     SeriesProgress,
     TeamId,
@@ -209,10 +210,19 @@ def _base_state(
                     variant.lock_reach == "picking_team" and action.team_id == team
                 ):
                     locked[team].add(action.character_id)
-    used = {action.character_id for action in game.actions}
+    used = {
+        team: {
+            action.character_id
+            for action in game.actions
+            if action.kind == "ban"
+            or action.team_id == team
+            or settings.rule_settings.same_character_twice == "reject"
+        }
+        for team in teams
+    }
     available = {
         team: tuple(
-            sorted(c.id for c in catalog if not c.retired and c.id not in locked[team] | used)
+            sorted(c.id for c in catalog if not c.retired and c.id not in locked[team] | used[team])
         )
         for team in teams
     }
@@ -252,6 +262,16 @@ def _base_state(
         available=available,
         next_turn=next_turn,
         complete=complete,
+    )
+
+
+def derive_player_pool(
+    state: DraftState, team_id: TeamId, declared_pool: Sequence[str]
+) -> PlayerPool:
+    """A Player's pools follow Team availability, whoever played each Character."""
+    return PlayerPool(
+        remaining=tuple(sorted(set(declared_pool) - set(state.locks[team_id]))),
+        available_now=tuple(sorted(set(declared_pool) & set(state.available[team_id]))),
     )
 
 
@@ -370,8 +390,13 @@ def _rules(
         and action.character_id in state.locks[opponent]
     ):
         rules.append("wasted_ban")
-    if settings.rule_settings.same_character_twice == "reject" and any(
-        a.character_id == action.character_id for a in game.actions
+    if any(
+        a.character_id == action.character_id
+        and (
+            settings.rule_settings.same_character_twice == "reject"
+            or (action.kind == "pick" and (a.kind == "ban" or a.team_id == action.team_id))
+        )
+        for a in game.actions
     ):
         rules.append("duplicate_character")
     return tuple(rules)

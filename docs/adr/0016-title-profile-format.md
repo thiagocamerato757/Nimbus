@@ -6,3 +6,7 @@ The first release has no profile editor. Each Title has a rules file and a separ
 - **Catalog file:** each Character's stable id, display name, aliases and Retired flag. No roles or tags ([ADR 0017](0017-character-roles-derived-from-data.md)).
 
 For rule settings, "reject" means an Override is needed, "warn" accepts with a notice and no Violation, and "allow" is silent. The timer only informs: running out never skips a turn or blocks entry.
+
+## Amendment (2026-11-28): allowing duplicate Characters means mirroring
+
+The developer resolved [#15](https://github.com/thiagocamerato757/Nimbus/issues/15): `same_character_twice: allow` permits opposing Teams to each pick the same Character once, because mirroring is a choice between Teams, never permission to field two copies on one Team. A current pick therefore removes that Character from Available Now for the picking Team and keeps it for the opponent; a current ban removes it for both Teams. A same-Team repeat or a pick of a banned Character still requires the existing duplicate Game Rule Override. Permitting same-Team duplicates would require a separate future setting. Fearless Locks in later Games keep their existing reach and sources, including when both Teams mirrored a Character. The `reject` setting retains its existing behavior.

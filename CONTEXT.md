@@ -75,7 +75,7 @@ A Character Pool estimated from a Player's match history, with how often and how
 A Player's Character Pool minus every Character unavailable to their Team for the rest of the Series, through a Fearless Lock or the Disabled List, whoever played it.
 
 **Available Now**:
-A Player's Remaining Pool minus the current Game's bans and both Teams' picks so far.
+A Player's Remaining Pool minus the current Game's bans and their Team's picks so far, also minus the opponent's picks unless the Series allows mirroring. Mirroring lets opposing Teams each pick a Character once; it never lets one Team pick that Character twice.
 
 **Team**:
 A competing side of players. A Series has two, and at most one is marked as Our Team.

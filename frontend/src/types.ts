@@ -20,6 +20,7 @@ export interface Game {
   id: string; number: number; patch: string | null;
   assignments: { team_id: TeamId; side: string; position: 'first' | 'second' }[];
   lineups: Record<TeamId, string[]>;
+  player_pools: Record<string, { remaining: string[]; available_now: string[] }>;
   player_assignments: { turn_index: number; player_id: string }[];
   actions: DraftAction[];
   edit_history: { recorded_at: string; before: DraftAction; after: DraftAction | null }[];

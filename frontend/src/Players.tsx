@@ -74,6 +74,17 @@ export function GamePlayers({ series, profile, players, game, busy, current, onE
             {identity(p)}{p.current_team_id !== team.roster_id && <small> · {t('formerMember')}</small>}</label>)}
           <button disabled={busy}>{t('saveLineup')}</button>
         </form>
+        {ids.map(id => {
+          const player = players.find(p => p.id === id);
+          const pool = game.player_pools[id];
+          if (!pool) return null;
+          const names = (characters: string[]) => characters.map(character => profile.catalog.find(c => c.id === character)?.name ?? character).join(', ') || t('emptyPool');
+          return <article key={id} data-testid="player-pool">
+            <h4>{player ? identity(player) : id} · {profile.character_pool_label}</h4>
+            <p data-testid="remaining-pool"><strong>{t('poolRemaining', {count: pool.remaining.length})}</strong><br />{names(pool.remaining)}</p>
+            <p data-testid="available-now"><strong>{t('poolAvailableNow', {count: pool.available_now.length})}</strong><br />{names(pool.available_now)}</p>
+          </article>;
+        })}
         <h4>{t('playerAssignments')}</h4>
         {game.actions.filter(a => a.kind === 'pick' && a.team_id === team.id).map(action => {
           const assigned = game.player_assignments.find(a => a.turn_index === action.turn_index)?.player_id ?? '';

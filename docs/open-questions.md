@@ -39,7 +39,7 @@
 - Recording live a Game that was already imported
 - Which Flag wins when several apply to one Character; evaluating "until patch X" when the Series has no patch
 - Confirm the built-in live Source cannot be removed as a whole
-- Available Now when a profile allows the same Character twice in a Game
+- [x] Available Now with duplicate Characters (#15, 2026-11-28): the existing allow setting permits mirroring across opposing Teams only. A pick removes the Character for the picking Team, while the opponent can still pick it; bans remove it for both Teams. Fearless in later Games is unchanged. Same-Team duplicates remain a Game Rule rejection; permitting them would need a future setting (ADR 0016).
 - The turn budget the milestone 3 latency prototype measures against
 - [x] First Selection default (#14): official Riot NACL26.6 verifies a league-specific previous-loser policy; generic LoL uses neutral `none`, with configurable editable policies and no universal league claim. See [source investigation](first-selection.md).
 - README "Getting started" commands once code exists
