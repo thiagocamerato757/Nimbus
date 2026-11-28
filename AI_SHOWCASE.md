@@ -613,3 +613,43 @@ Source: session transcript `08b0379a-9ce6-4010-9823-48089e53b9dc`, with each pro
 - **Spec observation (read only):** `docs/first-selection.md` and `docs/design-notes.md` do not state what "different" means.
 - **Standards:** no documented-standard violation. Judgement calls: `taken` no longer matches its name or comment; `App.tsx` runs the transition and `afterRecordedWinner` separately; the new journey repeats dialog setup.
 - **Fixes:** none applied; awaiting the developer.
+
+## PR #36 derived offer and re-review — 2026-11-28
+
+[PR #36](https://github.com/thiagocamerato757/Nimbus/pull/36) to `dev`, commit [`fc79e2f`](https://github.com/thiagocamerato757/Nimbus/commit/fc79e2f); issue #14, items 27, 34 and 35 of [#35](https://github.com/thiagocamerato757/Nimbus/issues/35).
+
+**Implementation:**
+- Developer decision: remove the stored `taken` field and derive the offer, as in ADR 0008.
+- Agents: the Claude Code primary agent only (Sonnet 5.5).
+- Time: 03:16:00Z–03:19Z for the first pass; **pause** while the developer decided on the one failing old test; resumed 03:21:55Z.
+- First attempt: **No.** One earlier unit test asserted the removed "no pre-fill" offer; it was replaced after the developer approved. Three browser journeys that waited on that offer were changed to wait on the timeline.
+- Validation: `npm run test:unit` 21 passed; `npx playwright test` 26 passed; `uv run --frozen pytest -q tests` 293 passed; `npm run build`, `ruff check`, `mypy` and `git diff --check` passed. The two new sequence tests failed first.
+
+**Re-review** (`sail-skills:code-review`, `origin/dev...fc79e2f`):
+- Reviewers 03:24:59Z–03:28:18Z.
+- Usage (session transcript): Standards 239,052 input, 172,211 cache read, 4,741 output; Spec 688,604 input, 590,136 cache read, 14,280 output; primary agent for implementation and review up to this record 5,036,300 input, 5,010,681 cache read, 19,784 output. Billing and credits are unavailable.
+- Verification: the Spec reviewer delayed the winner response by 3 s in scratch Playwright journeys, against the PR and against `dev`. The primary agent re-read `App.tsx` `launchGame`.
+- **Claude review status: completed, changes requested.** PR #36 was **not** merged, so PR #37 was not merged either.
+- Spec findings, both reproduced, both needing a holder change while the winner request is in flight:
+  1. The draft stops with no offer and no notice (the silence is new in this PR).
+  2. The draft records the holder shown at the click, not the one now on screen (also on `dev`).
+- Spec, read only: one design-notes sentence still speaks of the form "keeping" a pre-fill.
+- Standards: no documented-standard violation; judgement calls on a double reducer run, the names `apply` and `latest`, an undated design-notes edit and repeated journey steps.
+- Fixes: applied next, after the developer agreed; see below.
+
+## PR #36 setup lock, final review and merge — 2026-11-28
+
+[PR #36](https://github.com/thiagocamerato757/Nimbus/pull/36), commit [`a11d1b5`](https://github.com/thiagocamerato757/Nimbus/commit/a11d1b5), merged into `dev` as [`701c78d`](https://github.com/thiagocamerato757/Nimbus/commit/701c78d) at 03:41:19Z; branch deleted. Issue #14; remaining items in [#35](https://github.com/thiagocamerato757/Nimbus/issues/35).
+
+**Implementation:**
+- The next-Game setup cannot be edited while a save runs.
+- Agents: the Claude Code primary agent only (Sonnet 5.5).
+- Time: 03:31:49Z–03:37:30Z. First attempt: **Yes**.
+- Validation: the new journey failed first. `npx playwright test` 27 passed; `npm run test:unit` 21 passed; `uv run --frozen pytest -q tests` 293 passed; `npm run build` and `git diff --check` passed.
+
+**Final review** (`sail-skills:code-review`, `origin/dev...a11d1b5`):
+- Reviewers 03:37:46Z–03:40:57Z.
+- Usage (session transcript): Standards 211,377 input, 131,107 cache read, 4,723 output; Spec 895,093 input, 800,030 cache read, 14,847 output; primary agent from 03:31:49Z to this record 3,165,301 input, 3,148,759 cache read, 8,363 output. Billing and credits are unavailable.
+- Verification: the Spec reviewer ran scratch Playwright scripts with its own data, against the PR and against `dev`.
+- **Claude review status: completed. No Spec finding caused or exposed by the PR**, so it was merged under the developer's stopping rule.
+- Sent to #35: two reproduced behaviours unchanged from `dev` and outside the amendment's wording (the Replay setup and the winner dialog stay editable while saving), and the Standards judgement calls.
