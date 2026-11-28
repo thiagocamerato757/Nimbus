@@ -15,6 +15,8 @@ const en = {
   carriedFrom: 'carried from voided Game {number}', viewSource: 'View voided source',
   cancelReplay: 'Cancel Replay', replay_unavailable: 'Only the current Game can be replayed, when it is a Voided Game.',
   choice_without_holder: 'Record the First Selection holder before its choice.',
+  suggestionChanged: 'With the current result, the suggested holder would be {team}. Apply?',
+  suggestionRemoved: 'With the current result, there is no suggested holder. Apply?', applySuggestion: 'Apply',
   invalid_turn: 'Draft Actions must match the Draft Order and its Draft Positions.',
   copy_requires_same_draft_positions: 'Copying the draft requires the same Draft Positions; keep them or choose new draft.',
   replay_required: 'After a Voided Game, replay it: copy its draft or choose new draft.',

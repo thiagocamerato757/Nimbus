@@ -364,3 +364,52 @@ def test_bs012_a_choice_without_a_holder_is_rejected_everywhere(tmp_path):
             assert response.status_code == 422, response.text
             assert response.json()["detail"]["code"] == "choice_without_holder"
         assert client.get(base).json() == before.json()
+
+
+# Parent BS-012 / ADR-0009 (amended 2026-11-27) / ADR-0032: the migration clears
+# choices stored without a holder, logging each one, after a verified backup.
+def test_bs012_schema9_migration_clears_and_logs_orphan_choices(tmp_path, caplog):
+    import logging
+    import sqlite3
+
+    data = tmp_path / "data"
+    with CurrentClient(create_app(data_dir=data)) as client:
+        base = "/api/series/" + series(client)["id"]
+        kept = {"first_selection_holder": "A", "first_selection_choice": "side"}
+        first = post(
+            client, base + "/games", {"team_a_side": "blue", "first_pick_team": "A", **kept}
+        )["games"][0]
+        for _ in range(20):
+            saved = client.get(base).json()["games"][0]
+            turn = saved["state"]["next_turn"]
+            if turn is None:
+                break
+            catalog = client.get("/api/profiles").json()[0]["catalog"]
+            choice = catalog[turn["index"]]["id"] if turn["kind"] == "pick" else None
+            post(client, base + f"/games/{first['id']}/actions", {"character_id": choice})
+        second = post(client, base + "/games", {"team_a_side": "blue", "first_pick_team": "A"})[
+            "games"
+        ][-1]
+    with sqlite3.connect(data / "nimbus.sqlite3") as db:
+        db.execute("UPDATE games SET first_selection_choice = 'side' WHERE id = ?", (second["id"],))
+        db.execute("PRAGMA user_version = 9")
+    with (
+        caplog.at_level(logging.WARNING, logger="nimbus.store"),
+        CurrentClient(create_app(data_dir=data)) as client,
+    ):
+        games = client.get(base).json()["games"]
+        backups = client.get("/api/backups").json()
+    assert games[0]["first_selection_choice"] == "side"
+    assert games[1]["first_selection_choice"] is None
+    logged = [r.getMessage() for r in caplog.records if "First Selection choice" in r.getMessage()]
+    assert len(logged) == 1 and second["id"] in logged[0] and "side" in logged[0]
+    assert len(backups) == 1 and backups[0]["verified"]
+    with sqlite3.connect(data / "nimbus.sqlite3") as db:
+        assert db.execute("PRAGMA user_version").fetchone() == (10,)
+    caplog.clear()
+    with (
+        caplog.at_level(logging.WARNING, logger="nimbus.store"),
+        CurrentClient(create_app(data_dir=data)) as client,
+    ):
+        assert client.get(base).json()["games"] == games
+    assert not [r for r in caplog.records if "First Selection choice" in r.getMessage()]

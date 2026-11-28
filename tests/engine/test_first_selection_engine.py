@@ -122,3 +122,28 @@ def test_bs012_one_first_selection_rule_keeps_holder_and_choice_together(profile
     ):
         with pytest.raises(ValueError, match="choice_without_holder"):
             record(stored, sent)
+
+
+# Parent BS-012 / ADR-0009 (amended 2026-11-27): a choice without a holder is a
+# Structural Invariant breach. An edit is rejected only when it would create one;
+# an orphan already stored never blocks an edit and is dropped by it.
+def test_bs012_an_already_stored_orphan_choice_never_blocks_an_edit(profile):
+    import pytest
+
+    from nimbus.engine import record_first_selection
+
+    sides = profile.snapshot().sides or ("one", "two")
+    orphan = Game(
+        id="g",
+        number=1,
+        first_selection_choice="side",
+        assignments=(
+            Assignment(team_id="A", side=sides[0], position="first"),
+            Assignment(team_id="B", side=sides[1], position="second"),
+        ),
+    )
+    for sent in ({}, {"first_selection_holder": None}):
+        saved = record_first_selection(orphan, sent)
+        assert (saved.first_selection_holder, saved.first_selection_choice) == (None, None)
+    with pytest.raises(ValueError, match="choice_without_holder"):
+        record_first_selection(orphan, {"first_selection_choice": "side"})

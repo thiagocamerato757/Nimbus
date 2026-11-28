@@ -2,6 +2,18 @@ import { useState } from 'react';
 import { t } from './i18n';
 import type { Series, TeamId } from './types';
 
+// A later result never changes a form the analyst is filling in: the new
+// suggestion is offered, and only Apply changes the holder (#14, amended).
+export function SuggestionNotice({ teams, suggested, onApply }: {
+  teams: Series['teams']; suggested: TeamId | ''; onApply: () => void;
+}) {
+  const team = teams.find(item => item.id === suggested);
+  return <p role="status" data-testid="suggestion-notice">
+    {team ? t('suggestionChanged', { team: team.name }) : t('suggestionRemoved')}{' '}
+    <button type="button" onClick={onApply}>{t('applySuggestion')}</button>
+  </p>;
+}
+
 // A choice always belongs to a holder (#14, amended 2026-11-27): the choice is
 // disabled until a holder is selected and cleared whenever the holder changes.
 // With handlers the parent owns both values; without them the fields keep their

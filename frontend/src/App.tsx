@@ -3,7 +3,7 @@ import { ApiError, request, requestSnapshot } from './api';
 import { useLiveQuery } from './useLiveQuery';
 import { errorText, t } from './i18n';
 import { Rosters, GamePlayers } from './Players';
-import { FirstSelectionFields } from './FirstSelection';
+import { FirstSelectionFields, SuggestionNotice } from './FirstSelection';
 import type { Player, RosterTeam, Game, Profile, Series, TeamId, Fearless } from './types';
 
 export default function App() {
@@ -49,7 +49,7 @@ export default function App() {
   const [overrideNote, setOverrideNote] = useState('');
   const [correction, setCorrection] = useState<{ game: string; turn: number; character: string } | null>(null);
   const [winnerPrompt, setWinnerPrompt] = useState(false);
-  const [replay, setReplay] = useState<{ source: string; choice: '' | 'copy_draft' | 'new_draft'; side: string; first: TeamId; patch: string; lineups: Record<TeamId, string[]>; version: string; baseline: Series; holder?: TeamId | ''; selectionChoice?: string } | null>(null);
+  const [replay, setReplay] = useState<{ source: string; choice: '' | 'copy_draft' | 'new_draft'; side: string; first: TeamId; patch: string; lineups: Record<TeamId, string[]>; version: string; baseline: Series; suggested: TeamId | ''; holder?: TeamId | ''; selectionChoice?: string } | null>(null);
   const [replayPreview, setReplayPreview] = useState<Game | null>(null);
   const [replayChanges, setReplayChanges] = useState<string[]>([]);
   const [promptWinner, setPromptWinner] = useState<TeamId>('A');
@@ -72,15 +72,22 @@ export default function App() {
   const setupFirst = series?.rule_snapshot.sides_coupled
     ? (side === series.rule_snapshot.first_pick_side ? 'A' : 'B') : firstPick;
   const nextNumber = Math.max(0, ...(series?.games ?? []).map(game => game.number)) + 1;
-  // The server never applies a First Selection pre-fill: requests carry what is shown.
-  const shownHolder = selectionHolder ?? series?.next_first_selection_holder ?? '';
+  // The server never applies a First Selection pre-fill: requests carry what is
+  // shown. Each form takes its suggestion once, when it opens, so a background
+  // refresh never changes a field under the analyst.
+  const setupKey = series?.progress.can_start_next ? `${series.id}:${current?.id ?? ''}` : '';
+  const latestSuggestion = series?.next_first_selection_holder ?? '';
+  const [setupSuggestion, setSetupSuggestion] = useState<{ key: string; holder: TeamId | '' }>({ key: '', holder: '' });
+  if (setupSuggestion.key !== setupKey) setSetupSuggestion({ key: setupKey, holder: latestSuggestion });
+  const shownHolder = selectionHolder ?? setupSuggestion.holder;
   const replaySource = series?.games.find(game => game.id === replay?.source);
-  const replayHolder = replay?.holder ?? replaySource?.first_selection_prefill ?? '';
+  const replayHolder = replay?.holder ?? replay?.suggested ?? '';
+  const replaySuggestion = replaySource?.first_selection_prefill ?? '';
   const copyBlocked = replay?.choice === 'copy_draft'
     && replay.first !== replaySource?.assignments.find(a => a.position === 'first')?.team_id;
   useEffect(() => {
     setSelectionHolder(undefined); setSelectionChoice(''); setSetupNotice('');
-  }, [series?.id, current?.id]);
+  }, [setupKey, series?.id, current?.id]);
   useEffect(() => { setSide(seriesSides[0] ?? ''); }, [series?.id]);
 
   async function load() {
@@ -146,7 +153,8 @@ export default function App() {
     setReplayChanges([]);
     setReplay({source: current.id, choice: '', patch: current.patch ?? '', lineups: {...current.lineups},
       side: current.assignments.find(a => a.team_id === 'A')!.side,
-      first: current.assignments.find(a => a.position === 'first')!.team_id, version, baseline: series});
+      first: current.assignments.find(a => a.position === 'first')!.team_id, version, baseline: series,
+      suggested: current.first_selection_prefill ?? ''});
   }
 
   async function save(path: string, body?: unknown, expectedVersion?: string, correctedAction?: { game: string; turn: number }, onStale?: () => Promise<void>) {
@@ -235,7 +243,9 @@ export default function App() {
       if (!result.data.progress.can_start_next) { setWinnerPrompt(false); return; }
       // The result can produce a pre-fill the analyst has not seen yet: show it
       // in the setup form and let the analyst start the draft from there.
+      // The analyst recorded this result, so the form takes its new suggestion.
       const prefill = result.data.next_first_selection_holder ?? '';
+      setSetupSuggestion({ key: setupKey, holder: prefill });
       if (selectionHolder === undefined && prefill !== shownHolder) {
         setWinnerPrompt(false);
         setSetupNotice(t('prefillReady', { team: prefill ? teamName(prefill) : t('noSelectionHolder'), number: nextNumber }));
@@ -368,6 +378,8 @@ export default function App() {
             <label>{t('replaySide')}<select value={replay.side} onChange={e => setReplay({...replay, side: e.target.value, first: series.rule_snapshot.sides_coupled ? (e.target.value === series.rule_snapshot.first_pick_side ? 'A' : 'B') : replay.first})}>{seriesSides.map(side => <option key={side} value={side}>{side}</option>)}</select></label>
             <label>{t('replayFirst')}<select value={replay.first} disabled={series.rule_snapshot.sides_coupled} onChange={e => setReplay({...replay, first: e.target.value as TeamId})}>{series.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
             <FirstSelectionFields teams={series.teams} holder={replayHolder} choice={replay.selectionChoice ?? ''} onHolder={holder => setReplay(open => open && {...open, holder})} onChoice={selectionChoice => setReplay(open => open && {...open, selectionChoice})} />
+            {replaySuggestion !== replay.suggested && replaySuggestion !== replayHolder && <SuggestionNotice teams={series.teams} suggested={replaySuggestion}
+              onApply={() => setReplay(open => open && {...open, holder: replaySuggestion, suggested: replaySuggestion, selectionChoice: ''})} />}
             {series.teams.map(team => <label key={team.id}>{t('replayLineup', {team: team.name})}<select multiple value={replay.lineups[team.id]} onChange={e => setReplay({...replay, lineups: {...replay.lineups, [team.id]: [...e.target.selectedOptions].map(option => option.value)}})}>
               {players.filter(player => player.current_team_id === team.roster_id || current.lineups[team.id].includes(player.id)).map(player => <option key={player.id} value={player.id}>{player.name}</option>)}
             </select></label>)}
@@ -456,6 +468,8 @@ export default function App() {
             <label>{t('firstPick')}<select aria-label={t('firstPick')} value={setupFirst} disabled={series.rule_snapshot.sides_coupled} onChange={e => setFirstPick(e.target.value as TeamId)}>
               {series.teams.map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
             <FirstSelectionFields teams={series.teams} holder={shownHolder} choice={selectionChoice} onHolder={setSelectionHolder} onChoice={setSelectionChoice} />
+            {setupSuggestion.key === setupKey && latestSuggestion !== setupSuggestion.holder && latestSuggestion !== shownHolder && <SuggestionNotice teams={series.teams} suggested={latestSuggestion}
+              onApply={() => { setSetupSuggestion({ key: setupKey, holder: latestSuggestion }); setSelectionHolder(latestSuggestion); setSelectionChoice(''); }} />}
             {setupNotice && <p role="status" data-testid="prefill-notice">{setupNotice}</p>}
             <p className="muted">{t('selectionHint')}</p>
             <label>{t('gamePatch')}<input value={gamePatch} placeholder={series.patch ?? ''} onChange={e => setGamePatch(e.target.value)} maxLength={100} /></label>
@@ -479,12 +493,11 @@ export default function App() {
               <form key={`${game.id}-${game.first_selection_holder}-${game.first_selection_choice}`}
                 onChangeCapture={() => setEditVersion(previous => previous ?? version)} onSubmit={event => {
                   event.preventDefault(); const fields = new FormData(event.currentTarget);
-                  // Send the choice only when the analyst changed it: a new holder
-                  // with an untouched choice clears it on the server (#14, amended).
-                  const choice = fields.get('first_selection_choice') || null;
+                  // Holder and choice are sent exactly as shown (#14, amended);
+                  // a disabled choice is not submitted and is sent as none.
                   void save(`/series/${series.id}/games/${game.id}/first-selection`, {
                     first_selection_holder: fields.get('first_selection_holder') || null,
-                    ...(choice !== game.first_selection_choice ? {first_selection_choice: choice} : {}),
+                    first_selection_choice: fields.get('first_selection_choice') || null,
                   });
                 }}>
                 <FirstSelectionFields teams={series.teams} holder={game.first_selection_holder ?? ''} choice={game.first_selection_choice ?? ''} />

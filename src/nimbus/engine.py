@@ -173,13 +173,14 @@ def record_first_selection(game: Game, sent: Mapping[str, str | None]) -> Game:
 
     ``sent`` holds only the fields the analyst sent. Unsent fields are kept,
     except a stored choice when the holder changes, because it belonged to the
-    other Team. A choice always belongs to a holder (amended 2026-11-27).
+    other Team. A choice without a holder breaks a Structural Invariant
+    (ADR-0009, amended 2026-11-27): a request that would create one is rejected,
+    and one already stored is dropped rather than blocking the edit.
     """
     holder = sent.get("first_selection_holder", game.first_selection_holder)
     same_holder = holder == game.first_selection_holder
-    choice = sent.get(
-        "first_selection_choice", game.first_selection_choice if same_holder else None
-    )
+    kept = game.first_selection_choice if same_holder and holder is not None else None
+    choice = sent.get("first_selection_choice", kept)
     if choice is not None and holder is None:
         raise ValueError("choice_without_holder")
     return game.model_copy(

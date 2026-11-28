@@ -60,7 +60,7 @@ class Store:
         with self.connection() as connection:
             connection.execute("PRAGMA journal_mode=WAL")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version in (1, 2, 3, 4, 5, 6, 7, 8):
+            if version in (1, 2, 3, 4, 5, 6, 7, 8, 9):
                 self.create_backup("migration")
             if version == 0:
                 migration = Path(__file__).with_name("migrations") / "001_initial.sql"
@@ -148,8 +148,31 @@ class Store:
                     connection.executescript("BEGIN;\n" + migration.read_text() + "\nCOMMIT;")
                 else:
                     connection.execute("PRAGMA user_version = 9")
-            elif version != 9:
+                version = 9
+            if version == 9:
+                self._clear_orphan_choices(connection)
+                version = 10
+            if version != 10:
                 raise RuntimeError(f"Unsupported Nimbus database schema: {version}")
+
+    @staticmethod
+    def _clear_orphan_choices(connection: sqlite3.Connection) -> None:
+        """Schema 10: no stored First Selection choice lacks a holder (ADR-0009)."""
+        orphaned = "first_selection_holder IS NULL AND first_selection_choice IS NOT NULL"
+        rows = connection.execute(
+            f"SELECT id, series_id, number, first_selection_choice FROM games WHERE {orphaned}"
+        ).fetchall()
+        for row in rows:
+            logging.getLogger(__name__).warning(
+                "Clearing First Selection choice %r stored without a holder: "
+                "Series %s, Game %s (%s)",
+                row["first_selection_choice"],
+                row["series_id"],
+                row["number"],
+                row["id"],
+            )
+        connection.execute(f"UPDATE games SET first_selection_choice = NULL WHERE {orphaned}")
+        connection.execute("PRAGMA user_version = 10")
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
