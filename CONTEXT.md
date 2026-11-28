@@ -115,6 +115,9 @@ Among linked records of the same real Game, the one that counts. The others are 
 **Alias**:
 Another name under which a Team, Player or Character is known.
 
+**Current Game**:
+The last Game in the Series, voided or not.
+
 **Game Status**:
 Where a Game stands: Drafting, Drafted, Closed or Voided.
 
@@ -133,6 +136,9 @@ A Game whose draft is complete but whose winner has not been recorded.
 **Voided Game**:
 A Game that was abandoned or remade. By default its Draft Actions do not count for Fearless.
 
+**Replay**:
+A new Game in the same Series that repeats a Voided Game, shares its Game number and remains linked to it. The Voided Game keeps its own record.
+
 **Side**:
 The half of the map a Team plays on in a Game, such as blue or red in League of Legends. It does not determine Draft Position.
 _Avoid_: Draft side
@@ -144,6 +150,10 @@ _Avoid_: Pick side, pick order
 **First Selection**:
 The right, held by one Team before a Game's draft, to choose either its Side or its Draft Position, leaving the other choice to the opponent.
 _Avoid_: Side selection
+
+**First Selection Pre-fill**:
+The holder the previous Game's result gives, shown in an open Game setup for the analyst to keep or change. It is never recorded by itself.
+_Avoid_: Suggestion (a Copilot's ranked options)
 
 **Draft Order**:
 A named list of turns for a Game's draft, each belonging to a Draft Position and being either a ban or a pick. A Title profile defines one or more, and each Series uses one.

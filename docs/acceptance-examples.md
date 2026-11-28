@@ -20,6 +20,29 @@ Concrete cases agreed during design, to be turned into tests.
 - During that Game's draft, one of the 4 is banned and a teammate picks another.
 - The mid Player still has 4 Remaining and has 2 Available Now.
 
+## A correction explains the duplicate on the later turn
+
+- The Series prohibits duplicate Characters within a Game. Turns 7 and 10 initially name different Characters.
+- The analyst corrects turn 7 to the Character already recorded on turn 10.
+- The correction saves, turn 10 is unchanged and carries the duplicate Violation; turn 7 does not carry that duplicate Violation.
+- The analyst immediately sees the effect: "This correction makes turn 10 a duplicate".
+- If the same Character also occurs on a third turn, every occurrence after the first in Draft Order carries its own duplicate Violation.
+
+## A copied Replay preserves the scope of acknowledgements
+
+- The analyst explicitly chooses to copy the most recent Voided Game's draft into its Replay.
+- The copy saves despite Game Rule Violations; Structural Invariants still hold and no actions are silently dropped.
+- An Open Violation stays Open. A corresponding Acknowledged Violation with matching rule, action and cause stays Acknowledged, with a traceable "carried from voided Game N" reason plus the original reason.
+- A different cause or new breach arrives Open without blocking the save.
+- Player Assignments and winner start empty. Copied Draft Actions remain editable, and the original Voided Game remains in the timeline linked to the Replay.
+
+## Voided Game Locks apply to higher Game numbers
+
+- Hard Fearless, with the snapshot configured to count Voided Games. Azir is not locked by Games 1 or 2.
+- Game 3 picks Azir and is then Voided.
+- Its Replay shares Game number 3 and copies the draft. It has no Fearless Violation from the voided Game 3, because Locks apply only to higher Game numbers.
+- In Game 4, Azir is locked for both Teams, including through the voided Game 3 under the snapshot setting.
+
 ## The sequential-draft promise holds for a second profile
 
 - A synthetic, test-only Deadlock-style profile: 6 Players per Team, a ban sequence A, BB, AA, B written as consecutive turns, then picks.

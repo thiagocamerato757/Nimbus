@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 TeamId = Literal["A", "B"]
 Position = Literal["first", "second"]
 ActionKind = Literal["ban", "pick"]
+FirstSelectionDefault = Literal["none", "loser", "winner", "alternate"]
 
 
 class Value(BaseModel):
@@ -69,15 +70,33 @@ class SeriesFormat(Value):
 
 
 class RuleSnapshot(Value):
+    sides: tuple[str, str] | None = None
+    sides_coupled: bool = False
+    first_pick_side: str | None = None
+    default_first_selection_holder: FirstSelectionDefault = "none"
     draft_order: DraftOrder
     rule_settings: RuleSettings
     fearless: Fearless = Fearless()
     series_format: SeriesFormat = SeriesFormat()
 
 
+class RosterTeam(Value):
+    id: str
+    name: str
+
+
+class Player(Value):
+    declared_pools: dict[str, tuple[str, ...]] = Field(default_factory=dict)
+    id: str
+    name: str
+    usual_role: str | None = None
+    current_team_id: str | None = None
+
+
 class Team(Value):
     id: TeamId
     name: str
+    roster_id: str | None = None
 
 
 class Assignment(Value):
@@ -97,14 +116,22 @@ class OverrideReason(Value):
         return self
 
 
+class CarriedAcknowledgement(Value):
+    game_id: str
+    game_number: int
+    fingerprint: str
+
+
 class Acknowledgement(Value):
     turn_index: int
     rule: str
     fingerprint: str
+    carried_from: tuple[CarriedAcknowledgement, ...] = Field(default=(), exclude_if=lambda v: not v)
     reason: OverrideReason
 
 
 class Violation(Value):
+    carried_from: tuple[CarriedAcknowledgement, ...] = Field(default=(), exclude_if=lambda v: not v)
     turn_index: int
     rule: str
     status: Literal["open", "acknowledged"]
@@ -123,13 +150,36 @@ class DraftAction(Value):
     character_id: str | None
 
 
+class ActionEdit(Value):
+    recorded_at: str
+    before: DraftAction
+    after: DraftAction | None
+
+
+class PlayerAssignment(Value):
+    turn_index: int
+    player_id: str
+
+
+def empty_lineups() -> dict[TeamId, tuple[str, ...]]:
+    return {"A": (), "B": ()}
+
+
 class Game(Value):
+    first_selection_holder: TeamId | None = None
+    first_selection_choice: Literal["side", "draft_position"] | None = None
+    replay_of: str | None = None
+    winner: TeamId | None = None
+    voided: bool = False
+    player_assignments: tuple[PlayerAssignment, ...] = ()
+    lineups: dict[TeamId, tuple[str, ...]] = Field(default_factory=empty_lineups)
     patch: str | None = None
     id: str
     number: int
     assignments: tuple[Assignment, ...]
     actions: tuple[DraftAction, ...] = ()
     acknowledgements: tuple[Acknowledgement, ...] = ()
+    edit_history: tuple[ActionEdit, ...] = ()
 
 
 class Series(Value):
@@ -150,6 +200,9 @@ class NextTurn(Value):
 
 
 class DraftState(Value):
+    status: Literal["Drafting", "Drafted", "Closed", "Voided"] = "Drafting"
+    result_pending: bool = False
+    missing: tuple[str, ...] = ()
     locks: dict[TeamId, tuple[str, ...]]
     available: dict[TeamId, tuple[str, ...]]
     next_turn: NextTurn | None
@@ -160,8 +213,20 @@ class DraftState(Value):
 
 
 class GameView(Game):
+    first_selection_prefill: TeamId | None = None
     state: DraftState
 
 
+class SeriesProgress(Value):
+    score: dict[TeamId, int]
+    pending_results: tuple[int, ...]
+    ended: bool
+    can_start_next: bool
+    deciding_game: int | None = None
+    games_past_decision: tuple[int, ...] = ()
+
+
 class SeriesView(Series):
+    next_first_selection_holder: TeamId | None = None
+    progress: SeriesProgress
     games: tuple[GameView, ...] = ()

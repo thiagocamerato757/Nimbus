@@ -29,7 +29,11 @@
 - Spelled-out number lists and Observation templates in English and pt-BR; digit allowlist
 - [x] Override reasons (#10): Official ruling, Profile mismatch, Earlier entry was wrong, Other. A note is optional except for Other, which requires a nonblank note. Two Profile mismatch Overrides for the same rule within one Series show advice to update the Title profile.
 - Timer start, reset and display
-- What is pre-filled when replaying a Voided Game
+- [x] Replay prefill (#13): editable Lineups, Sides, Draft Positions and Patch from the Voided Game; explicit copy-draft/new-draft choice with no default. Replay keeps the same Game number and links to the preserved Voided Game (ADR 0034).
+- [x] Copied Replay draft (#13): save immediately with visible Violations; Open stays Open, Acknowledged carries a traceable source reason plus its original reason; Structural Invariants hold and nothing is dropped. Player Assignments and winner start empty. Only the most recent voided attempt can be replayed before the next Game starts; a voided Replay can be replayed again (ADR 0034).
+- [x] Carried acknowledgements (#13): inherit only for the corresponding rule/action/cause, with provenance; a different cause or new breach arrives Open without blocking save (ADR 0009/0034).
+- [x] Fearless between attempts (#13): a Game produces Locks only for higher Game numbers. Same-number attempts never lock against each other; Voided Games still lock later numbers when the snapshot enables their counting (ADR 0011/0034, Azir acceptance example).
+- [x] Duplicate Character Violation carrier (#11): each occurrence after the first in Draft Order; immediately explain effects on another action when saving a correction (ADR 0009 amendment).
 - Changing a Series Format after Games exist
 - Undoing a wrong alias, "same Player" or "same Game" answer
 - Recording live a Game that was already imported
@@ -37,7 +41,7 @@
 - Confirm the built-in live Source cannot be removed as a whole
 - Available Now when a profile allows the same Character twice in a Game
 - The turn budget the milestone 3 latency prototype measures against
-- Verify First Selection default against league rulebooks (unconfirmed)
+- [x] First Selection default (#14): official Riot NACL26.6 verifies a league-specific previous-loser policy; generic LoL uses neutral `none`, with configurable editable policies and no universal league claim. See [source investigation](first-selection.md).
 - README "Getting started" commands once code exists
 - AGENTS.md has no architecture or agent rules yet, although AI_SHOWCASE.md says it does
 

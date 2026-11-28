@@ -48,7 +48,11 @@ class Workspace:
             start = next(
                 message for message in messages if message["type"] == "http.response.start"
             )
-            if writing and 200 <= start["status"] < 300:
+            if (
+                writing
+                and not scope["path"].endswith("/replay-preview")
+                and 200 <= start["status"] < 300
+            ):
                 connection.execute("UPDATE workspace_version SET version = version + 1")
                 connection.commit()
                 version += 1

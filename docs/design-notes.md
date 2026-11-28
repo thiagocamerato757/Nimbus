@@ -13,10 +13,11 @@ Behaviour agreed during design that is neither a glossary term ([CONTEXT.md](../
 
 ## Game lifecycle
 
-- A Game goes Drafting → Drafted → Closed, and can be Voided from any status.
+- A Game goes Drafting → Drafted → Closed, and can be Voided from any status. Only the current Game, the last one in the Series, can be voided (ADR 0034, amended 2026-11-27).
 - Drafted means every turn is filled or, for bans, skipped.
-- Closed requires **all** Player Assignments **and** a winner.
-- The next Game can start once the previous one is Drafted (or Closed) or Voided. Neither missing Player Assignments nor a missing winner blocks it.
+- Closed requires **all** Player Assignments **and** a winner. A Game's missing list shows everything still needed to reach Closed: a complete draft, a Player Assignment for every pick turn and the winner if absent. A stored winner that does not count yet is a note, not a missing item (amended 2026-11-27).
+- The next Game can start once the previous one is Drafted (or Closed). Neither missing Player Assignments nor a missing winner blocks it. After a Voided Game, the next Game is always its Replay, under the same number. The Replay follows the same gate as an ordinary next Game, so it is rejected while the Series has ended (ADR 0034, amended 2026-11-27).
+- A winner can be set only for a Drafted or Closed Game, and cleared in any status. A winner left on a Game that returns to Drafting does not count until its draft is complete again, and can still be cleared (amended 2026-11-27).
 
 ## Draft
 
@@ -24,7 +25,7 @@ Behaviour agreed during design that is neither a glossary term ([CONTEXT.md](../
 - Locks apply as soon as a pick is recorded. They follow the Character, never the Player, and substitutions or swaps do not change them.
 - The locked-ban rule applies only when the Character is already locked for the opponent of the banning Team.
 - A Violation's acknowledgement covers one specific conflict (rule, action and cause): if any of them changes and a rule is still broken, it is Open again; if all match exactly again, the acknowledgement applies again.
-- Only the most recent Draft Action of the current (latest non-voided) Game can be cleared; if it has none, there is nothing to clear. Anything else is corrected by replacement. Clearing goes into the edit history.
+- Only the most recent Draft Action of the current Game, which is the last Game voided or not, can be cleared. If the current Game has no actions or is Voided, there is nothing to clear (ADR 0008, amended 2026-11-27). Anything else is corrected by replacement. Clearing goes into the edit history.
 - The Copilot warns about Open Violations only.
 - Retired Characters are not offered for new entries; a correction can still pick one deliberately.
 - The Disabled List is set at Series creation (pre-filled from the Workspace list) and editable with an impact preview.
@@ -39,3 +40,5 @@ Behaviour agreed during design that is neither a glossary term ([CONTEXT.md](../
 ## First Selection
 
 - The pre-filled holder can always be changed. With no winner recorded, nothing is pre-filled.
+- The pre-fill is only displayed; the server never applies a holder the analyst has not seen. After "Record winner and start", a different First Selection pre-fill is offered and the draft does not start until the analyst applies it or presses Start again (amended 2026-11-28).
+- An open setup or Replay form keeps the First Selection pre-fill it opened with; a changed result is offered with Apply and never changes a field by itself. A choice without a holder is a Structural Invariant breach (ADR 0009, amended 2026-11-27).

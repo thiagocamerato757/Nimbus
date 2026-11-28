@@ -20,6 +20,7 @@ test('starting Game 2 shows Game 1 picks locked for both Teams', async ({ page }
   }
   await page.getByLabel('First-pick Team').selectOption('B');
   await page.getByRole('button', { name: 'Start Game 2' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Later', exact: true }).click();
   for (const team of ['A', 'B']) {
     await expect(page.getByTestId(`locks-${team}`)).toContainText('Orianna');
   }
