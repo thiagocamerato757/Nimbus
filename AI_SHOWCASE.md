@@ -689,3 +689,31 @@ Source: session transcript `08b0379a-9ce6-4010-9823-48089e53b9dc`, with each pro
 - **First attempt / fixes:** No. Engine expected-red ImportError preceded implementation; sandbox API red hung and was interrupted after implementation began, so no valid API expected-red observation exists. Later tests expanded coverage after initial slice; full test-first compliance is not claimed. Operational retries: unavailable generic Python, read-only default uv cache, sandbox TestClient hang, missing frontend translation keys, Ruff imports/unused fixtures. Two focused browser failures used an exact label locator for the multiple select; the observed accessible listbox role/name locator passed, with all assertions retained. UI corrected Remaining copy, added Team identification and explicit historical-vs-profile Draft Order choice. Production build repeated after those real UI changes; full Python/browser run once each.
 - **Validation:** **367 Python tests, 30 browser journeys, 21 frontend unit tests passed**; production build/TypeScript, mypy (11 files), Ruff and whitespace passed. New coverage: 12 engine cases and 9 HTTP cases across LoL/synthetic six-player profiles, plus one browser journey. Existing TestClient warning remains. Exact command/UTC/exit/log manifest, negative browser trace, Gherkin/eight-attribute gate, report and usage: `.scratch/issues-15-17/17-*`. No PR created by worker.
 - **Claude review:** pending. Run `sail-skills:code-review` in Claude Code against `dev` or the final reviewed range before merging.
+
+## Issues #15–#17 sequential closeout — 2026-11-28
+
+Completed on `feat/issues-15-17`, [draft PR #38](https://github.com/thiagocamerato757/Nimbus/pull/38) against `dev`. Primary Codex orchestrated three separate workers, published evidence and closed each issue before the next worker began. No review subagents were used. #15's original worker resumed before its first commit/evidence closeout after the developer resolved its domain question.
+
+| Issue | Commit | Published evidence | Final verification |
+| --- | --- | --- | --- |
+| #15 — Player pools and mirroring | `90a56fd` | [Evidence](https://github.com/thiagocamerato757/Nimbus/issues/15#issuecomment-7241799253) | 335 Python, 29 browser, 21 frontend unit tests; build/types/lint |
+| #16 — Disabled/Retired Characters | `f1c474e` | [Evidence](https://github.com/thiagocamerato757/Nimbus/issues/16#issuecomment-7241983897) | 346 Python, 29 browser, 21 frontend unit tests; build/types/lint |
+| #17 — Settings impact preview and format amendment | `3bf9ada` | [Evidence](https://github.com/thiagocamerato757/Nimbus/issues/17#issuecomment-7242162041) | 367 Python, 30 browser, 21 frontend unit tests; build/types/lint |
+
+Test counts are suite snapshots, never additive. Existing #15/#16/#17 worker entries retain their exact measurement cutoffs, commands, expected-red outcomes and unplanned fixes. **This aggregate supersedes their partial usage snapshots; do not add those snapshots again.**
+
+- **Total task wall time:** first recorded primary command `2026-11-28T15:32:50Z` to `2026-11-28T16:21:18.162762+00:00`, **2908.16s (48.47 minutes)**, including domain-decision wait and handoffs. Worker #15 reports a 248-second domain-answer pause (15:40:25–15:44:33Z, snapshot-to-resumed-tool scope); no explicit user pause or additional worker pause was recorded. Worker-only elapsed intervals and total wall time have different scopes and must not be summed. Later closeout commit/push/final reply are outside this measured cutoff.
+- **Usage source/scope:** latest cumulative `event_msg/token_count` from each listed implementation session's JSONL, read once, minus zero baseline for this fresh primary task and fresh worker sessions. Primary's first counter event is 15:32:54Z; worker counters start at session creation, slightly before first tool. Approval guardian sessions excluded. Repeated cumulative events are not summed. Cached input is already included in input, reasoning output already in output.
+
+| Agent role | Session | Counter cutoff UTC | Input | Cached input (included) | Output | Reasoning output (included) | Total |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| primary | `01a222c7-4ee7-76d3-9874-0850097a9133` | 2026-11-28T16:20:42.269Z | 8,623,004 | 8,540,800 | 18,200 | 2,321 | 8,641,204 |
+| /root/issue17 | `01a222e9-1ef0-7ea2-9e64-adea063c5872` | 2026-11-28T16:19:51.645Z | 3,902,869 | 3,826,688 | 22,848 | 2,982 | 3,925,717 |
+| /root/issue15 | `01a222ca-c348-7aa0-971f-3eb365dfa016` | 2026-11-28T15:51:28.450Z | 5,224,250 | 5,138,688 | 28,694 | 5,139 | 5,252,944 |
+| /root/issue16 | `01a222db-bc0c-7ed2-be9a-8694db369459` | 2026-11-28T16:06:29.539Z | 6,581,432 | 6,482,944 | 22,974 | 4,226 | 6,604,406 |
+
+Measured total through those per-session cutoffs: **24,331,555 input**, including **23,989,120 cached**, **92,716 output**, **24,424,271 total**; cache-write input **0**. **Billing, cost, credits and remaining balance unavailable.** Local recovery measurement: `.scratch/issues-15-17/usage-total.json`; provider JSONL file pointers are recorded there. This measures token traffic, not billed spend or human effort.
+
+**First-attempt outcome and fixes:** #15's expected TDD failures reached green, with sandbox/cache/tool retries. #16 needed a production fix to refresh catalog files without reparsing invalid edited rule files; unchanged BS-014 regression then passed. Its first browser full run exposed an existing Replay test read race; a persisted timeline marker now gates its existing assertions. #17 fixed missing translation keys/import hygiene and two focused browser locator failures; its interrupted API red run is explicitly not claimed as observed red-green. Primary retries: GitHub sandbox network failure, unavailable generic Python shim, one invalid `tail` inspection, and initial HTTPS push missing a Git credential helper; retry with authenticated `gh auth git-credential` succeeded. No assertion was weakened to claim success. Detailed negative evidence remains in the published packs.
+
+**Claude review status: pending.** Before merging PR #38, run `sail-skills:code-review` in Claude Code against `dev` (or the corresponding PR range), and append its findings/status when available. No merge performed.
