@@ -27,12 +27,16 @@ A missing/pending result means no holder prefill for every policy. `alternate`
 also needs that Game's recorded holder. Game 1 has no guessed holder.
 The prefill is computed for display only (amended 2026-11-27). The server never
 applies it: every setup or Replay request carries the holder the analyst saw, and
-an omitted holder records none. After "Record winner and start", the setup form
-shows the holder the result pre-filled, and the draft begins only when the analyst
-starts it. Prefill can always be changed. Choice starts empty.
-The setup and Replay forms take the suggestion once, when they open. A later
-result changes no field: a notice offers the new suggestion, and only Apply
-changes the holder and clears the choice (amended 2026-11-27).
+an omitted holder records none. The pre-filled holder can always be changed.
+Choice starts empty.
+
+The setup and Replay forms take the First Selection pre-fill once, when they open
+(amended 2026-11-28). Only the analyst's own change or Apply moves the holder. A
+later result changes no field: the form offers the new pre-fill, and Apply changes
+the holder and clears the choice. If "Record winner and start" produces a
+different pre-fill, the draft does not start; the analyst applies the offer or
+presses Start again. This logic is one reducer, `frontend/src/firstSelectionForm.ts`,
+shared by the setup, Replay and timeline forms.
 
 A Replay computes its default from the previous lower-number Game, never its
 same-number voided source's result or holder. Its choice starts empty. Its

@@ -40,5 +40,5 @@ Behaviour agreed during design that is neither a glossary term ([CONTEXT.md](../
 ## First Selection
 
 - The pre-filled holder can always be changed. With no winner recorded, nothing is pre-filled.
-- The pre-fill is only displayed; the server never applies a holder the analyst has not seen. After "Record winner and start", the setup form shows the holder the result pre-filled before the draft begins (amended 2026-11-27).
-- An open setup or Replay form keeps the suggestion it opened with; a changed result is offered with Apply and never changes a field by itself. A choice without a holder is a Structural Invariant breach (ADR 0009, amended 2026-11-27).
+- The pre-fill is only displayed; the server never applies a holder the analyst has not seen. After "Record winner and start", a different First Selection pre-fill is offered and the draft does not start until the analyst applies it or presses Start again (amended 2026-11-28).
+- An open setup or Replay form keeps the First Selection pre-fill it opened with; a changed result is offered with Apply and never changes a field by itself. A choice without a holder is a Structural Invariant breach (ADR 0009, amended 2026-11-27).

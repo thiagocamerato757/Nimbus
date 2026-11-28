@@ -151,6 +151,10 @@ _Avoid_: Pick side, pick order
 The right, held by one Team before a Game's draft, to choose either its Side or its Draft Position, leaving the other choice to the opponent.
 _Avoid_: Side selection
 
+**First Selection Pre-fill**:
+The holder the previous Game's result gives, shown in an open Game setup for the analyst to keep or change. It is never recorded by itself.
+_Avoid_: Suggestion (a Copilot's ranked options)
+
 **Draft Order**:
 A named list of turns for a Game's draft, each belonging to a Draft Position and being either a ban or a pick. A Title profile defines one or more, and each Series uses one.
 

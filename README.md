@@ -210,9 +210,11 @@ uv run ruff check src scripts tests
 uv run ruff format --check src scripts tests
 cd frontend
 npm run build
+npm run test:unit
 npm test
 ```
 
+`npm run test:unit` runs the Vitest unit tests of the frontend logic.
 Playwright starts isolated backend/frontend servers on ports 8000 and 5173;
 stop running development servers first. Its database is temporary.
 
