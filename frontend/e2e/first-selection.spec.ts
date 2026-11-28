@@ -168,6 +168,12 @@ async function client(request: import('@playwright/test').APIRequestContext) {
   };
 }
 
+// The live refresh shows the cleared winner; with no pre-fill there is no offer.
+async function previousWinnerCleared(page: import('@playwright/test').Page) {
+  await expect(page.getByTestId('timeline').locator('details').first().locator('select[name="winner"]')).toHaveValue('');
+  await expect(page.locator('.next-game').getByTestId('prefill-offer')).toHaveCount(0);
+}
+
 async function draftedSeries(request: import('@playwright/test').APIRequestContext, teamA: string, teamB: string) {
   const post = await client(request);
   let series = await post('/api/series', {profile_id: 'selection-fixture', team_a: teamA, team_b: teamB});
@@ -251,7 +257,7 @@ test('recording another winner never moves a choice to the other Team', async ({
   const setup = page.locator('.next-game');
   await expect(setup.getByLabel('First Selection holder')).toHaveValue('B');
   await post(path + '/winner', {winner: null});
-  await expect(setup.getByTestId('prefill-offer')).toContainText('there is no suggested holder');
+  await previousWinnerCleared(page);
   await setup.getByLabel('First Selection choice').selectOption('side');
   await setup.getByRole('button', {name: 'Start Game 2', exact: true}).click();
   const prompt = page.getByRole('dialog', {name: 'Record the previous Game’s winner'});
@@ -280,12 +286,87 @@ test('after Apply, a different recorded result still stops before the draft', as
   await setup.getByRole('button', {name: 'Apply', exact: true}).click();
   await expect(setup.getByLabel('First Selection holder')).toHaveValue('A');
   await post(path + '/winner', {winner: null});
-  await expect(setup.getByTestId('prefill-offer')).toContainText('there is no suggested holder');
+  await previousWinnerCleared(page);
   await setup.getByRole('button', {name: 'Start Game 2', exact: true}).click();
   const prompt = page.getByRole('dialog', {name: 'Record the previous Game’s winner'});
   await prompt.getByLabel('Winner').selectOption('A');
   await prompt.getByRole('button', {name: 'Record winner and start', exact: true}).click();
   await expect(setup.getByTestId('prefill-offer')).toContainText('Again Foxes');
   await expect(setup.getByLabel('First Selection holder')).toHaveValue('A');
+  expect((await (await request.get(`/api/series/${series.id}`)).json()).games).toHaveLength(1);
+});
+
+// docs/spec/mvp.md (amended 2026-11-28): "different" means different from the
+// holder shown, even when the result gives the pre-fill the form opened with.
+test('stops and offers when the recorded result differs from the holder shown', async ({ page, request }) => {
+  const {post, series, path} = await draftedSeries(request, 'Shown Owls', 'Shown Foxes');
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Shown Owls vs Shown Foxes', exact: true}).click();
+  const setup = page.locator('.next-game');
+  await expect(setup.getByLabel('First Selection holder')).toHaveValue('B');
+  await post(path + '/winner', {winner: null});
+  await previousWinnerCleared(page);
+  await setup.getByLabel('First Selection holder').selectOption('A');
+  await setup.getByRole('button', {name: 'Start Game 2', exact: true}).click();
+  const prompt = page.getByRole('dialog', {name: 'Record the previous Game’s winner'});
+  await prompt.getByLabel('Winner').selectOption('A');
+  await prompt.getByRole('button', {name: 'Record winner and start', exact: true}).click();
+  await expect(setup.getByTestId('prefill-offer')).toContainText('Shown Foxes');
+  await expect(setup.getByLabel('First Selection holder')).toHaveValue('A');
+  expect((await (await request.get(`/api/series/${series.id}`)).json()).games).toHaveLength(1);
+  await setup.getByRole('button', {name: 'Start Game 2', exact: true}).click();
+  await expect(page.getByTestId('draft-progress')).toHaveText('0 / 20 turns');
+  const saved = await (await request.get(`/api/series/${series.id}`)).json();
+  expect(saved.games[1].first_selection_holder).toBe('A');
+});
+
+// docs/spec/mvp.md (amended 2026-11-28): the offer is derived. Picking the
+// offered Team by hand clears offer and notice; a later correction offers again.
+test('picking the offered holder by hand clears it, and a correction offers again', async ({ page, request }) => {
+  const {post, series, path} = await draftedSeries(request, 'Hand Owls', 'Hand Foxes');
+  await post(path + '/winner', {winner: null});
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Hand Owls vs Hand Foxes', exact: true}).click();
+  const setup = page.locator('.next-game');
+  await setup.getByLabel('First Selection holder').selectOption('A');
+  await setup.getByRole('button', {name: 'Start Game 2', exact: true}).click();
+  const prompt = page.getByRole('dialog', {name: 'Record the previous Game’s winner'});
+  await prompt.getByLabel('Winner').selectOption('A');
+  await prompt.getByRole('button', {name: 'Record winner and start', exact: true}).click();
+  await expect(setup.getByTestId('prefill-offer')).toContainText('Hand Foxes');
+  await expect(page.getByTestId('prefill-notice')).toBeVisible();
+  await setup.getByLabel('First Selection holder').selectOption('B');
+  await expect(setup.getByTestId('prefill-offer')).toHaveCount(0);
+  await expect(page.getByTestId('prefill-notice')).toHaveCount(0);
+  await post(path + '/winner', {winner: 'B'});
+  await expect(setup.getByTestId('prefill-offer')).toContainText('Hand Owls');
+  await expect(setup.getByLabel('First Selection holder')).toHaveValue('B');
+  await expect(page.getByTestId('prefill-notice')).toHaveCount(0);
+  expect((await (await request.get(`/api/series/${series.id}`)).json()).games).toHaveLength(1);
+});
+
+// Regression from the PR #36 re-review: while "Record winner and start" waits for
+// the server, the setup cannot be edited, so what is recorded is what was shown.
+test('locks the setup while the winner is being recorded', async ({ page, request }) => {
+  const {post, series, path} = await draftedSeries(request, 'Lock Owls', 'Lock Foxes');
+  await post(path + '/winner', {winner: null});
+  let release = () => {};
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/winner', async route => { await held; await route.continue(); });
+  await page.goto('/');
+  await page.getByRole('button', {name: 'Lock Owls vs Lock Foxes', exact: true}).click();
+  const setup = page.locator('.next-game');
+  await setup.getByRole('button', {name: 'Start Game 2', exact: true}).click();
+  const prompt = page.getByRole('dialog', {name: 'Record the previous Game’s winner'});
+  await prompt.getByLabel('Winner').selectOption('A');
+  await prompt.getByRole('button', {name: 'Record winner and start', exact: true}).click();
+  await expect(setup.getByLabel('First Selection holder')).toBeDisabled();
+  await expect(setup.getByLabel('Side for Lock Owls')).toBeDisabled();
+  await expect(setup.getByRole('button', {name: 'Start Game 2', exact: true})).toBeDisabled();
+  release();
+  await expect(setup.getByTestId('prefill-offer')).toContainText('Lock Foxes');
+  await expect(page.getByTestId('prefill-notice')).toBeVisible();
+  await expect(setup.getByLabel('First Selection holder')).toBeEnabled();
+  await expect(setup.getByLabel('Side for Lock Owls')).toBeEnabled();
   expect((await (await request.get(`/api/series/${series.id}`)).json()).games).toHaveLength(1);
 });

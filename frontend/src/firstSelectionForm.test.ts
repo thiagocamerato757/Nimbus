@@ -55,8 +55,8 @@ describe('result changes while the form is open', () => {
     expect(offeredPrefill(form)).toBe('A');
   });
 
-  it('offers that there is no pre-fill any more', () => {
-    expect(offeredPrefill(result(open(), ''))).toBe('');
+  it('offers nothing when the result no longer gives a pre-fill', () => {
+    expect(offeredPrefill(result(open(), ''))).toBeNull();
   });
 
   it('withdraws the offer when the result returns, or the holder already matches', () => {
@@ -91,10 +91,38 @@ describe('Record winner and start', () => {
     expect(afterRecordedWinner(applied, 'B').startDraft).toBe(false);
   });
 
-  it('starts the draft when the recorded result offers nothing new', () => {
-    expect(afterRecordedWinner(open(), 'B').startDraft).toBe(true);
-    expect(afterRecordedWinner(open(''), '').startDraft).toBe(true);
+});
+
+// The whole start rule (docs/spec/mvp.md, amended 2026-11-28): "different" means
+// different from the holder shown, not from the pre-fill the form last took.
+describe('Record winner and start: the start rule', () => {
+  it('starts when the new pre-fill matches the holder shown', () => {
+    expect(afterRecordedWinner(open('B'), 'B').startDraft).toBe(true);
     expect(afterRecordedWinner(holder(open(''), 'A'), 'A').startDraft).toBe(true);
+    expect(afterRecordedWinner(holder(open('B'), 'A'), 'A').startDraft).toBe(true);
+  });
+
+  it('stops and offers whenever it names another Team than the holder shown', () => {
+    for (const form of [open(''), holder(open(''), 'A'), holder(open('B'), 'A'), holder(open('B'), '')]) {
+      const after = afterRecordedWinner(form, 'B');
+      expect(after.startDraft).toBe(false);
+      expect(after.form).toMatchObject({ holder: form.holder, choice: form.choice });
+      expect(offeredPrefill(after.form)).toBe('B');
+    }
+  });
+
+  it('keeps that offer when the live refresh had already delivered the result', () => {
+    const refreshed = result(choose(holder(open('B'), 'A')), 'B');
+    const after = afterRecordedWinner(refreshed, 'B');
+    expect(after.startDraft).toBe(false);
+    expect(offeredPrefill(after.form)).toBe('B');
+    expect(reduce(after.form, { type: 'apply' })).toMatchObject({ holder: 'B', choice: '' });
+  });
+
+  it('starts when the result gives no pre-fill, whatever is shown', () => {
+    expect(afterRecordedWinner(holder(open('B'), 'A'), '').startDraft).toBe(true);
+    expect(afterRecordedWinner(open('B'), '').startDraft).toBe(true);
+    expect(afterRecordedWinner(open(''), '').startDraft).toBe(true);
   });
 });
 
@@ -104,5 +132,41 @@ describe('request fields', () => {
     expect(requestFields(open())).toEqual({ first_selection_holder: 'B', first_selection_choice: null });
     expect(requestFields(choose(open()))).toEqual({ first_selection_holder: 'B', first_selection_choice: 'side' });
     expect(requestFields(result(choose(open()), 'A'))).toEqual({ first_selection_holder: 'B', first_selection_choice: 'side' });
+  });
+});
+
+// docs/spec/mvp.md (amended 2026-11-28): the offer is derived from the current
+// pre-fill and the holder shown; nothing remembers what was "already taken".
+describe('derived offer', () => {
+  it('offers a corrected pre-fill after the offered Team was picked by hand', () => {
+    const stopped = afterRecordedWinner(holder(open(''), 'A'), 'B').form;
+    expect(offeredPrefill(stopped)).toBe('B');
+    const picked = holder(stopped, 'B');
+    expect(offeredPrefill(picked)).toBeNull();
+    const corrected = result(picked, 'A');
+    expect(corrected.holder).toBe('B');
+    expect(offeredPrefill(corrected)).toBe('A');
+    expect(afterRecordedWinner(corrected, 'A').startDraft).toBe(false);
+  });
+
+  it('clears the offer and the notice when the offered Team is selected by hand', () => {
+    const stopped = afterRecordedWinner(open(''), 'B').form;
+    expect(stopped.notStarted).toBe(true);
+    const picked = holder(stopped, 'B');
+    expect(offeredPrefill(picked)).toBeNull();
+    expect(picked.notStarted).toBe(false);
+    // The offer is derived again; the old notice does not come back with it.
+    const away = holder(picked, 'A');
+    expect(offeredPrefill(away)).toBe('B');
+    expect(away.notStarted).toBe(false);
+  });
+
+  it('is shown exactly when the current pre-fill names another Team', () => {
+    for (const prefill of ['A', 'B', ''] as const) {
+      for (const shown of ['A', 'B', ''] as const) {
+        const form = holder(result(open(''), prefill), shown);
+        expect(offeredPrefill(form)).toBe(prefill !== '' && prefill !== shown ? prefill : null);
+      }
+    }
   });
 });

@@ -32,10 +32,12 @@ Choice starts empty.
 
 The setup and Replay forms take the First Selection pre-fill once, when they open
 (amended 2026-11-28). Only the analyst's own change or Apply moves the holder. A
-later result changes no field: the form offers the new pre-fill, and Apply changes
-the holder and clears the choice. If "Record winner and start" produces a
-different pre-fill, the draft does not start; the analyst applies the offer or
-presses Start again. This logic is one reducer, `frontend/src/firstSelectionForm.ts`,
+later result changes no field. An offer is shown if and only if there is a current
+pre-fill and it names a Team other than the holder displayed: "different" means
+different from the holder displayed, not from an earlier pre-fill. Apply takes the
+offered Team and clears the choice. "Record winner and start" starts no draft if
+and only if, after recording, that offer exists; the analyst applies it or presses
+Start again. The offer is derived, never stored. This logic is one reducer, `frontend/src/firstSelectionForm.ts`,
 shared by the setup, Replay and timeline forms.
 
 A Replay computes its default from the previous lower-number Game, never its

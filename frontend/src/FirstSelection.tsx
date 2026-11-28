@@ -40,11 +40,10 @@ export function FirstSelectionFields({ teams, form, dispatch }: {
 export function PrefillOffer({ teams, form, onApply }: {
   teams: Series['teams']; form: FirstSelectionForm; onApply: () => void;
 }) {
-  const offered = offeredPrefill(form);
-  if (offered === null) return null;
-  const team = teams.find(item => item.id === offered);
+  const team = teams.find(item => item.id === offeredPrefill(form));
+  if (!team) return null;
   return <p role="status" data-testid="prefill-offer">
-    {team ? t('prefillOffered', { team: team.name }) : t('prefillOfferedNone')}{' '}
+    {t('prefillOffered', { team: team.name })}{' '}
     <button type="button" onClick={onApply}>{t('applyPrefill')}</button>
   </p>;
 }
@@ -56,7 +55,7 @@ export function RecordedFirstSelection({ teams, game, busy, onEdit, onSave }: {
 }) {
   const holder = game.first_selection_holder ?? '';
   const [form, dispatch] = useReducer(firstSelectionReducer, {
-    key: game.id, holder, choice: game.first_selection_choice ?? '', taken: holder, latest: holder,
+    key: game.id, holder, choice: game.first_selection_choice ?? '', latest: '', notStarted: false,
   });
   return <form onChangeCapture={onEdit} onSubmit={event => { event.preventDefault(); onSave(requestFields(form)); }}>
     <FirstSelectionFields teams={teams} form={form} dispatch={dispatch} />
