@@ -1,46 +1,105 @@
-# AI-Powered Workflow: How Nimbus Was Built
+# AI-Powered Workflow: How Nimbus Is Being Built
 
-> How Nimbus is built with coding agents, documented as it happens.
-> This file is filled in as the project is built.
+> Progress through 2026-11-27. Updated from the implementation conversation, Git history, GitHub issues and merged pull requests.
 
 ## The setup
 
-Nimbus was built by a single developer using two kinds of agents with separate roles:
+Nimbus is being built by one developer working with coding agents. The developer chooses the scope, resolves domain questions, reviews the results and controls integration.
 
-| Role | Tool | What it did |
+| Role | Tool | Work recorded so far |
 |---|---|---|
-| **Planning & review** | Claude Code (terminal) | Sharpened the idea, wrote specs and split them into tickets on GitHub Issues, explored data, ran code reviews. |
-| **Execution** | **Codex** | Implemented tickets in parallel, each in its own Git worktree, with changes reviewed before merging. |
+| Planning | Claude Code (terminal) | Design documents, glossary, architecture decisions and amendments recorded in PRs #1 and #3. The MVP specification lives in [`docs/spec/mvp.md`](docs/spec/mvp.md), moved from issue #2 on 2026-11-27. |
+| Implementation | Codex | Issues #4–#10, tests, browser verification, evidence packs and pull requests. A fresh subagent handled each issue in sequence. |
+| Review | Codex with two parallel review subagents | Independent Standards and Spec reviews of PRs #31 and #32, followed by a tested correction in PR #33. |
+| Product decisions and integration | Developer | Catalog requirements, Override categories, the stable `dev` branch and feature-branch workflow. |
 
-Both agents followed the same process, the [SAIL Skills](https://github.com/SAIL-PUC-Rio/Agentic-Software-Engineering-Skills) from PUC-Rio's Software and AI Engineering Lab:
-`/grill-with-docs` → `/to-spec` → `/to-tickets` → `/implement` → `/evidence` → `/code-review`.
-Every ticket closes with an evidence pack on its GitHub issue that maps each claim to the command that proved it.
+The project uses [SAIL Skills](https://github.com/SAIL-PUC-Rio/Agentic-Software-Engineering-Skills) from PUC-Rio's Software and AI Engineering Lab. Shared project guidance lives in [`AGENTS.md`](AGENTS.md), terminology in [`CONTEXT.md`](CONTEXT.md), and architecture decisions in [`docs/adr/`](docs/adr/).
 
-Shared rules for all agents live in [`AGENTS.md`](AGENTS.md).
+For the implementation recorded here, the developer invoked `implement-sequential`. Each issue received a fresh subagent, TDD at the specification's agreed seams, a commit and a published evidence pack before the next issue started. The primary agent reviewed and published the evidence. Review used `code-review`, which ran its two axes in parallel.
 
 ## Task log
 
-One row per task. Filled in right after each task, not from memory at the end.
+This log reconstructs completed work from the session and linked artifacts. “First try” means the first implementation attempt reached its checks without an unplanned fix or handoff. Expected TDD red tests do not count as failed attempts. Design interviews and specification amendments use N/A because acceptance evolved through human decisions.
 
-| Ticket | Agent | Worked first try? | Review fixes needed | Time | Tokens / credits | Notes |
+Time comes from recorded execution timestamps. Claude rows cover the command through its final response, including interview waits. Codex issue rows cover the dedicated worker from task start to completion. Worker time and tokens exclude the primary agent's coordination, evidence publication and follow-up corrections, so they are partial task measurements. The review time covers the primary agent's review-and-correction turn; its token count covers the two reviewers only.
+
+Tokens count input plus output, including cached input. Codex figures use the final cumulative counter before worker completion. Claude figures sum usage once per message id to avoid counting repeated response chunks. Cache tokens are already included in totals. Credits and monetary charges were unavailable in these records.
+
+| Task | Agent | Worked first try? | Review fixes needed | Time | Tokens / credits | Notes |
 |---|---|---|---|---|---|---|
-| #1 | | | | | | |
+| Design and architecture, PR #1 | Claude Code + developer | N/A — iterative design interview | Design notes reviewed before merge | 73m 59s — elapsed | 13,691,240 tokens; credits unavailable | Glossary, 33 ADRs, scope, acceptance examples and project guidance. [PR #1](https://github.com/thiagocamerato757/Nimbus/pull/1) |
+| MVP specification and decision amendments | Claude Code + developer | N/A — spec and human amendments | Four ADR amendments recorded after the spec | 8m 21s — elapsed | 4,905,585 tokens; credits unavailable | MVP spec remains open because later milestones are pending. [Spec #2](https://github.com/thiagocamerato757/Nimbus/issues/2), [PR #3](https://github.com/thiagocamerato757/Nimbus/pull/3) |
+| #4 — Walking skeleton | Codex subagent + primary agent | No — worker interrupted; primary completed | Primary agent completed UI and validation after subagent usage limit; browser selector corrected | 9m 48s — worker only | 1,471,905 tokens (worker only); credits unavailable | Hard Fearless draft across UI/API/SQLite, catalog generator. 10 Python tests and 1 browser journey passed at closeout. [Evidence](https://github.com/thiagocamerato757/Nimbus/issues/4#issuecomment-7203635811) |
+| #5 — Second Title profile | Codex subagent | Yes — one worker completed the slice | Replaced League-specific test inputs with shared profile fixtures | 6m 13s — worker only | 1,331,246 tokens (worker only); credits unavailable | Six-player synthetic profile passed the same engine suite. Production engine needed no change. 17 Python tests and 1 browser journey passed. [Evidence](https://github.com/thiagocamerato757/Nimbus/issues/5#issuecomment-7203751602) |
+| #6 — Local protection and live tabs | Codex subagent + primary agent | No — handoff and form-race correction | Migration backup added during review; primary agent fixed a form-reset race after usage limit | 10m 56s — worker only | 2,008,327 tokens (worker only); credits unavailable | Host/Origin/header checks, atomic stale-edit rejection, live tabs and WSL2 opening check. Final 27 Python tests and 2 browser journeys passed. [Evidence](https://github.com/thiagocamerato757/Nimbus/issues/6#issuecomment-7208103865) |
+| #7 — Profile validation | Codex subagent | No — full-suite regression; later identity fix | Preserved optional catalog defaults after synthetic-profile regression; later identity gap fixed in PR #33 | 8m 40s — worker only | 1,771,024 tokens (worker only); credits unavailable | File/defect diagnostics and stored Character reference checks. 57 Python tests passed at closeout. [Evidence](https://github.com/thiagocamerato757/Nimbus/issues/7#issuecomment-7208339028) |
+| #8 — Verified backups | Codex subagent | No — publication fix after initial checks | Publish backup filename only after integrity verification | 8m 52s — worker only | 1,913,993 tokens (worker only); credits unavailable | Manual backups, shared automatic interface, configurable retention and restore docs. Full suites passed with 61 Python tests and 3 browser journeys before the final correction; targeted API/browser checks passed afterward. [Evidence](https://github.com/thiagocamerato757/Nimbus/issues/8#issuecomment-7208474190) |
+| #9 — Series settings | Codex subagent | No — browser labels needed correction | Browser accessible labels adjusted | 10m 59s — worker only | 2,845,188 tokens (worker only); credits unavailable | Formats, Draft Orders, Fearless combinations, Patch and official/scrim metadata. Legacy schema migration and backup restoration verified. 94 Python tests and 4 browser journeys passed. [Evidence](https://github.com/thiagocamerato757/Nimbus/issues/9#issuecomment-7208630985) |
+| #10 — Rule checks and Overrides | Codex subagent | Yes — one worker completed the slice | Earlier test setup that relied on duplicates being allowed was updated for the new rule enforcement | 10m 55s — worker only | 3,267,902 tokens (worker only); credits unavailable | Skipped Bans, allow/warn/reject rules, acknowledged reasons and profile advice. 129 Python tests and 6 browser journeys passed. [Evidence](https://github.com/thiagocamerato757/Nimbus/issues/10#issuecomment-7208797739) |
+| Review of PRs #31 and #32; correction in #33 | Two Codex reviewers + primary agent | Yes — first correction passed its regressions | Missing/renamed profiles bypassed loading checks; duplicate profile ids silently replaced entries | 4m 26s — review + correction | 1,429,354 tokens (reviewers only); credits unavailable | Fixed by validating the complete profile identity set. 132 Python tests, mypy and Ruff passed. [PR #33](https://github.com/thiagocamerato757/Nimbus/pull/33) |
 
 ## What worked
 
-_TBD_
+- **Sequential closeout kept dependencies visible.** Issues #4–#10 were committed and had evidence published one at a time. Each worker received its issue's scenarios and agreed testing seams.
+- **The second profile exposed assumptions early.** The shared engine tests now run against League of Legends and a synthetic six-player profile with consecutive ban turns and its own Characters. The initial second-profile slice required changes to test fixtures while the engine already handled the sequence.
+- **Tests exercised normal entry points.** API tests use temporary SQLite databases. Playwright journeys enter drafts through the UI and cover locks, stale edits, backups, settings, Overrides and notices. Hypothesis checks determinism and locked-Character availability across profiles.
+- **Evidence preserved limitations.** Packs link requirements to checks and retain failed attempts, environment constraints and the exact scope of final verification. The #8 pack distinguishes full-suite results from the targeted checks after its final correction.
+- **Independent review found a missed case.** Both review axes identified the missing-profile failure despite the existing green suite. Three API regressions reproduced removed, renamed and duplicate identities before the correction.
 
 ## What didn't
 
-_TBD_
+- **Long-running subagents hit usage limits.** The #4 and #6 workers stopped before closeout. Their files remained available, and the primary agent completed implementation and verification. The interruption caused handoff work.
+- **The sandbox blocked local test infrastructure.** API TestClient runs could hang and browser servers could fail to bind loopback sockets. The affected checks passed when rerun with the required execution permissions. A writable temporary uv cache was also needed in later work.
+- **Browser tests exposed UI timing problems.** A form reset could clear the next turn's prepared selection during refresh. The correction coordinated the reset with the saved state and paused inputs during submission.
+- **Passing tests left a profile-identity gap.** Character deletion was covered, but removing or renaming the entire profile still caused an unhandled error when reopening a Series. PR #33 added the missing validation and regression cases.
+- **The initial branch workflow needed correction.** The first four implementation commits were made on local `main`. Before publication, they were moved to a feature branch and local `main` was realigned with its remote. The developer designated `dev` as stable, and subsequent implementation and fixes used separate branches targeting `dev`.
+- **Some maintenance debt remains.** The Standards review flagged `App.tsx` as a possible Divergent Change smell because creation, draft entry, Overrides, backups and timeline rendering share one component. That observation remains a maintenance suggestion.
 
 ## Numbers
 
-_TBD: totals by agent (tasks, success rate, tokens/credits, time)._
+These counts describe the recorded work through merged PR #33. Test counts are snapshots of the growing suite and must not be added together.
+
+| Measure | Recorded result |
+|---|---|
+| Implemented and closed issues | 7, covering #4–#10 |
+| Published implementation evidence packs | 7, one per issue |
+| Implementation PRs merged into `dev` | 2, [#31](https://github.com/thiagocamerato757/Nimbus/pull/31) and [#32](https://github.com/thiagocamerato757/Nimbus/pull/32) |
+| Review correction PR merged into `dev` | 1, [#33](https://github.com/thiagocamerato757/Nimbus/pull/33) |
+| Latest complete Python suite | 132 passed after the profile-identity fix |
+| Latest complete browser suite | 6 passed at #10 closeout |
+| Engine profiles in the shared suite | 2 |
+| Text-only Characters in the initial generated catalog | 173, Data Dragon 16.23.1 |
+| Review findings by axis | Standards: 1 P2 breach and 1 maintenance judgment. Spec: 1 P2 gap. Both axes identified the same P2 bug. |
+| Recorded subagent usage-limit interruptions | 2, in #4 and #6 |
+| Measured worker time for #4–#10 | 66m 23s total across seven sequential worker runs; primary-agent work excluded |
+| Recorded worker tokens for #4–#10 | 14,609,585 total, including 14,041,216 cached input tokens; primary-agent and guardian usage excluded |
+| Credits and monetary cost | Unavailable in local usage records |
+
+The latest Python run emitted an upstream TestClient deprecation warning. The six-journey browser suite predates the backend-only profile-identity correction. Windows Edge 158.0.4370.45 verified opening the WSL2 app and loading its profile through the API; full draft and two-tab journeys ran in Chromium on WSL2.
 
 ## Lessons learned
 
-_TBD_
+1. Add a second profile before extending the rules engine. It makes Title assumptions visible while the implementation is still small.
+2. Test the absence of an entire dependency as well as malformed entries inside it. Catalog checks did not cover a missing profile identity.
+3. Record user decisions alongside implementation. The developer required a versioned, text-only Data Dragon generator that preserves existing entries and aliases. They also defined the four Override categories and required a note for Other.
+4. Make operational assumptions explicit. The repeated Profile mismatch hint uses a communicated threshold of two Overrides of the same rule within one Series.
+5. Verify persistence through restart and restoration. Snapshots, migrations, acknowledgements and checked backups need proof with saved data.
+6. Keep the stable-branch convention in place before committing. Feature and correction branches now target `dev`.
+7. Retain execution and usage records. Local Codex and Claude logs recovered elapsed time and token counts, including cached input. Separate worker measurements from coordination and handoff work, and obtain billing records to report credits or monetary cost.
+
+The current result is a local drafting application with the first seven implementation issues complete. Issue #2 still tracks the broader MVP, including later data and Copilot milestones.
+
+### Measurement sources
+
+The recovered figures use the local Codex session JSONL records under `~/.codex/sessions/2026/11/26/` and `2026/11/27/`, matched by their `/root/issue4` through `/root/issue10` and review agent paths. Worker durations use `task_started` and the first `task_complete`; later session updates are excluded. Review wall time was 2026-11-27 14:04:23.269–14:08:49.167 UTC. Its reviewers consumed 644,023 and 785,331 tokens in parallel.
+
+Claude design and spec figures come from session `1e23f704-68ea-4c8c-988a-88ee42307311`. Design spans 2026-11-26 19:23:34.020–20:37:32.731 UTC, and spec/amendments span 20:39:00.214–20:47:21.182 UTC. Setup and the later `/to-tickets` session are excluded from those rows. These timestamps measure elapsed intervals, including human or tool waits. The records provide usage counters rather than credit invoices.
+
+## Ongoing recording
+
+From 2026-11-27 onward, each implementation and review records timestamps, agent usage, verification outcomes and unplanned fixes as work proceeds. Closeout updates this file with measured time and tokens, with cache and partial-task scope identified. Available billing counters supply credits or cost; unavailable figures remain labelled explicitly. The execution instructions live in `AGENTS.md`.
+
+The developer also requested a reminder to run `sail-skills:code-review` in Claude Code before merging implementation or correction branches. The developer accepted the Codex review of PRs #31 and #32 and its validated correction in PR #33, waiving an additional Claude Code review for this completed set. The Claude Code reminder applies to subsequent work.
 
 ## Sequential implementation #11–#14 — recorded scope
 
@@ -525,3 +584,32 @@ Source: session transcript `08b0379a-9ce6-4010-9823-48089e53b9dc`, with each pro
 - **Sent to [#35](https://github.com/thiagocamerato757/Nimbus/issues/35):**
   - One reproduced cosmetic issue: the "draft has not started" notice stays after the analyst picks the offered holder by hand.
   - Two interpretation-dependent Spec observations and the Standards findings.
+
+## First Selection stop rule, item 34 — 2026-11-28
+
+[PR #36](https://github.com/thiagocamerato757/Nimbus/pull/36) to `dev`, commit [`26a9468`](https://github.com/thiagocamerato757/Nimbus/commit/26a9468); follows #14 and PR #34. Item 34 of [#35](https://github.com/thiagocamerato757/Nimbus/issues/35).
+
+- **Task:** the draft stops when the recorded result's pre-fill names a Team other than the holder shown, and starts when there is no pre-fill.
+- **Agents:** the Claude Code primary agent only (Sonnet 5.5).
+- **Time:** 2026-11-28T03:02:18Z–2026-11-28T03:08:18Z, 6m 0s elapsed, no pause.
+- **Usage:** 2,355,120 input tokens, of which 2,345,886 cache read, and 8,689 output (session transcript, up to this record). Billing and credits are unavailable.
+- **First attempt: Yes.** No unplanned retries.
+- **Validation:** `npm run test:unit` 18 passed; `npx playwright test` 25 passed; `uv run --frozen pytest -q tests` 293 passed; `npm run build` and `git diff --check` passed. Three unit tests failed first, and the new journey fails without the `App.tsx` wiring.
+- **Claude review:** pending; run `sail-skills:code-review` against `dev` before merging PR #36.
+
+## Claude Code review of PR #36 — 2026-11-28
+
+`sail-skills:code-review` ran on [PR #36](https://github.com/thiagocamerato757/Nimbus/pull/36) against `dev` (`origin/dev...26a9468`, base `56305de`).
+
+- **Time:** 03:11:04Z to this record; reviewers 03:11:25Z–03:13:03Z.
+- **Usage (session transcript):**
+  - Standards reviewer: 235,061 input, of which 171,041 cache read, and 4,346 output.
+  - Spec reviewer: 537,383 input, of which 460,101 cache read, and 9,981 output.
+  - Primary agent from the start to this record: 1,925,134 input, of which 1,915,378 cache read, and 6,693 output.
+  - Billing and credits are unavailable.
+- **Verification:** the Spec reviewer compared the base and head reducers and ran one scratch Playwright journey with temporary data. The primary agent reproduced the finding by driving both reducers with the same actions.
+- **Claude review status: completed, changes requested.** There is a reproduced Spec finding, so PR #36 was **not** merged and its branch was kept.
+- **Spec finding (reproduced, a regression from this PR):** on stopping, the `recorded` action stores the shown holder as the pre-fill already taken, so a later result giving that same Team is never offered. `dev` offers it.
+- **Spec observation (read only):** `docs/first-selection.md` and `docs/design-notes.md` do not state what "different" means.
+- **Standards:** no documented-standard violation. Judgement calls: `taken` no longer matches its name or comment; `App.tsx` runs the transition and `afterRecordedWinner` separately; the new journey repeats dialog setup.
+- **Fixes:** none applied; awaiting the developer.
