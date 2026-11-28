@@ -1,5 +1,14 @@
 // All interface copy is keyed here; profile and user-entered names are data.
 const en = {
+  currentSnapshot: 'Current Rule Snapshot', remainingPool: 'Remaining Pool', cancelSettings: 'Cancel', amendSettings: 'Series rule settings', previewSettings: 'Preview changes', saveSettings: 'Save rule settings',
+  settingsImpact: 'Rule settings impact', endedChange: 'Series ended before → after',
+  violationsCreated: 'Violation created', violationsCleared: 'Violation cleared',
+  noRuleImpact: 'No Violations or Player Remaining Pools change.', yes: 'Yes', no: 'No',
+  banningLocked: 'Banning a Fearless-locked Character', allow: 'Allow', warn: 'Warn', reject: 'Reject',
+  mirroring: 'Allow opposing Teams to mirror picks', countVoided: 'Count Voided Games for Fearless',
+  incompatible_draft_order: 'Recorded Draft Actions do not fit this Draft Order.',
+  series_format_too_small: "The number of non-voided Games exceeds this Series Format's maximum.",
+
   seriesDisabled: 'Series Disabled List', workspaceDisabled: 'Workspace Disabled List',
   workspaceDisabledHint: 'Copied to new Series. Existing Series keep their own list.',
   disabledCharacters: 'Disabled Characters', saveDisabled: 'Save Disabled List',

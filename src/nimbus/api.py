@@ -22,6 +22,7 @@ from nimbus.engine import (
     game_assignments,
     is_drafted_or_closed,
     next_game_block,
+    propose_settings,
     record_entry,
     record_first_selection,
     replay_block,
@@ -37,6 +38,7 @@ from nimbus.models import (
     OverrideReason,
     Player,
     RosterTeam,
+    RuleSettings,
     Series,
     SeriesFormat,
     SeriesView,
@@ -70,6 +72,14 @@ class CreateSeries(Request):
     fearless: Fearless | None = None
     patch: str | None = Field(default=None, max_length=100)
     record_type: Literal["official", "scrim"] = "official"
+
+
+class EditSettings(Request):
+    draft_order_id: str | None = None
+    fearless: Fearless | None = None
+    series_format: SeriesFormat | None = None
+    disabled_characters: tuple[str, ...] | None = None
+    rule_settings: RuleSettings | None = None
 
 
 class EditPlayerAssignment(Request):
@@ -364,17 +374,59 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
     def get_series_disabled(identifier: str) -> tuple[str, ...]:
         return read(identifier).rule_snapshot.disabled_characters
 
-    @app.post("/api/series/{identifier}/disabled")
-    def edit_series_disabled(identifier: str, request: EditPool) -> SeriesView:
+    def settings_proposal(identifier: str, request: EditSettings) -> Series:
         series = read(identifier)
-        characters = checked_disabled(series.profile_id, request.character_ids)
-        updated = series.model_copy(update={
-            "rule_snapshot": series.rule_snapshot.model_copy(
-                update={"disabled_characters": characters}
+        profile = profiles()[series.profile_id]
+        changes = request.model_dump(exclude_none=True)
+        if request.fearless is not None:
+            changes["fearless"] = request.fearless
+        if request.rule_settings is not None:
+            changes["rule_settings"] = request.rule_settings
+        if request.series_format is not None:
+            if request.series_format not in profile.series_formats:
+                raise reject(
+                    "unknown_series_format",
+                    "Choose a Series Format allowed by the Title profile.",
+                    422,
+                )
+            changes["series_format"] = request.series_format
+        if request.disabled_characters is not None:
+            changes["disabled_characters"] = checked_disabled(
+                series.profile_id, request.disabled_characters
             )
-        })
+        if request.draft_order_id is not None:
+            order = next((o for o in profile.draft_orders if o.id == request.draft_order_id), None)
+            if order is None:
+                raise reject(
+                    "unknown_draft_order", "Choose a Draft Order from the Title profile.", 422
+                )
+            changes.pop("draft_order_id")
+            changes["draft_order"] = order
+        try:
+            return propose_settings(series, series.rule_snapshot.model_copy(update=changes))
+        except ValueError as error:
+            messages = {
+                "incompatible_draft_order": "Recorded Draft Actions do not fit this Draft Order.",
+                "series_format_too_small": "The number of non-voided Games exceeds this Series Format's maximum.",
+            }
+            raise reject(str(error), messages[str(error)]) from None
+
+    @app.post("/api/series/{identifier}/settings-preview")
+    def preview_settings(identifier: str, request: EditSettings) -> dict[str, SeriesView]:
+        return {
+            "before": view(read(identifier)),
+            "after": view(settings_proposal(identifier, request)),
+        }
+
+    @app.post("/api/series/{identifier}/settings")
+    def edit_settings(identifier: str, request: EditSettings) -> SeriesView:
+        updated = settings_proposal(identifier, request)
         store.save_rules(updated)
         return view(updated)
+
+    @app.post("/api/series/{identifier}/disabled")
+    def edit_series_disabled(identifier: str, request: EditPool) -> SeriesView:
+        return edit_settings(identifier, EditSettings(disabled_characters=request.character_ids))
 
     @app.get("/api/series")
     def get_series_list() -> list[SeriesView]:

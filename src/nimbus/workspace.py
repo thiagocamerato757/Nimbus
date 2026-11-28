@@ -50,7 +50,7 @@ class Workspace:
             )
             if (
                 writing
-                and not scope["path"].endswith("/replay-preview")
+                and not scope["path"].endswith(("/replay-preview", "/settings-preview"))
                 and 200 <= start["status"] < 300
             ):
                 connection.execute("UPDATE workspace_version SET version = version + 1")

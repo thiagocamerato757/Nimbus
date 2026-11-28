@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { DisabledList } from './DisabledList';
+import { SeriesSettings } from './SeriesSettings';
 import { ApiError, request, requestSnapshot } from './api';
 import { useLiveQuery } from './useLiveQuery';
 import { errorText, t } from './i18n';
@@ -346,7 +347,7 @@ export default function App() {
         </form>
         {creationProfile && <DisabledList key={creationProfile.id} profile={creationProfile} onSaved={() => { setEditVersion(null); void workspace.refresh(); }} />}
       </section> : <>
-        {profile && <DisabledList key={series.id} profile={profile} seriesId={series.id} onSaved={() => { void workspace.refresh(); }} />}
+        {profile && <SeriesSettings key={series.id} series={series} profile={profile} players={players} version={version} onSaved={() => { void workspace.refresh(); }} />}
         <p data-testid="series-score">{series.teams.map(team => `${team.name} ${series.progress.score[team.id]}`).join(' · ')}{series.progress.ended && <> · {t('seriesEnded')}</>}</p>
         {!!series.progress.games_past_decision.length && <p role="alert">{t('pastDecision', { number: series.progress.deciding_game! })}</p>}
         {current?.voided && !replay && !series.progress.ended && <button disabled={busy} onClick={setupReplay}>{t('replayGame', {number: current.number})}</button>}

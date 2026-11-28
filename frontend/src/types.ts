@@ -36,6 +36,6 @@ export interface Series {
   progress: { score: Record<TeamId, number>; pending_results: number[]; ended: boolean; can_start_next: boolean; deciding_game: number | null; games_past_decision: number[] };
   id: string; profile_id: string; teams: { id: TeamId; name: string; roster_id: string }[]; our_team: TeamId | null;
   patch: string | null; record_type: 'official' | 'scrim';
-  rule_snapshot: { disabled_characters: string[]; sides: string[] | null; sides_coupled: boolean; first_pick_side: string | null; default_first_selection_holder: "none" | "loser" | "winner" | "alternate"; series_format: SeriesFormat; fearless: Fearless; draft_order: { id: string; name: string; turns: Turn[] } };
+  rule_snapshot: { rule_settings: { banning_locked: 'allow' | 'warn' | 'reject'; same_character_twice: 'allow' | 'reject'; voided_games_count: boolean }; disabled_characters: string[]; sides: string[] | null; sides_coupled: boolean; first_pick_side: string | null; default_first_selection_holder: "none" | "loser" | "winner" | "alternate"; series_format: SeriesFormat; fearless: Fearless; draft_order: { id: string; name: string; turns: Turn[] } };
   games: Game[];
 }

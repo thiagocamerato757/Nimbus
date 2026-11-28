@@ -21,6 +21,7 @@ from nimbus.models import (
     OverrideReason,
     PlayerPool,
     RuleSnapshot,
+    Series,
     SeriesProgress,
     TeamId,
     Violation,
@@ -653,3 +654,19 @@ def create_replay(
 
 def _draft_positions(game: Game) -> dict[TeamId, str]:
     return {a.team_id: a.position for a in game.assignments}
+
+
+def propose_settings(series: Series, settings: RuleSnapshot) -> Series:
+    """Check an explicit rule amendment without mutating the recorded Series (BS-013)."""
+    if sum(not game.voided for game in series.games) > settings.series_format.games:
+        raise ValueError("series_format_too_small")
+    if settings.draft_order != series.rule_snapshot.draft_order:
+        for game in series.games:
+            for action in game.actions:
+                if not 0 <= action.turn_index < len(settings.draft_order.turns):
+                    raise ValueError("incompatible_draft_order")
+                turn = settings.draft_order.turns[action.turn_index]
+                owner = next(a.team_id for a in game.assignments if a.position == turn.position)
+                if turn.kind != action.kind or owner != action.team_id:
+                    raise ValueError("incompatible_draft_order")
+    return series.model_copy(update={"rule_snapshot": settings})
