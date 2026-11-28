@@ -115,6 +115,8 @@ test('a voided Game locks nothing in later Games while its Replay does', async (
   const setup = page.getByRole('region', {name: 'Replay setup'});
   await setup.getByLabel('New draft', {exact: true}).check();
   await setup.getByRole('button', {name: 'Create Replay', exact: true}).click();
+  // The old Game already has no locks; wait until the Replay save is visible.
+  await expect(page.getByTestId('timeline')).toContainText('Replay of voided Game 1');
   await expect(page.getByTestId('locks-A')).toContainText('No locks from earlier Games.');
   const replay = (await (await request.get(`/api/series/${series.id}`)).json()).games[1];
   await fill(replay.id, 10);

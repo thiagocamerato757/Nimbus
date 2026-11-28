@@ -1,5 +1,18 @@
 // All interface copy is keyed here; profile and user-entered names are data.
 const en = {
+  currentSnapshot: 'Current Rule Snapshot', remainingPool: 'Remaining Pool', cancelSettings: 'Cancel', amendSettings: 'Series rule settings', previewSettings: 'Preview changes', saveSettings: 'Save rule settings',
+  settingsImpact: 'Rule settings impact', endedChange: 'Series ended before → after',
+  violationsCreated: 'Violation created', violationsCleared: 'Violation cleared',
+  noRuleImpact: 'No Violations or Player Remaining Pools change.', yes: 'Yes', no: 'No',
+  banningLocked: 'Banning a Fearless-locked Character', allow: 'Allow', warn: 'Warn', reject: 'Reject',
+  mirroring: 'Allow opposing Teams to mirror picks', countVoided: 'Count Voided Games for Fearless',
+  incompatible_draft_order: 'Recorded Draft Actions do not fit this Draft Order.',
+  series_format_too_small: "The number of non-voided Games exceeds this Series Format's maximum.",
+
+  seriesDisabled: 'Series Disabled List', workspaceDisabled: 'Workspace Disabled List',
+  workspaceDisabledHint: 'Copied to new Series. Existing Series keep their own list.',
+  disabledCharacters: 'Disabled Characters', saveDisabled: 'Save Disabled List',
+  disabled_character: 'This Character is on the Series Disabled List. An Override is required.',
   selectionHolder: 'First Selection holder', selectionChoice: 'First Selection choice',
   noSelectionHolder: 'No holder recorded', noSelectionChoice: 'No choice recorded',
   choseSide: 'Chose Side', chosePosition: 'Chose Draft Position', saveSelection: 'Save First Selection',
@@ -40,6 +53,7 @@ const en = {
   rosters: 'Rosters and Declared Pools', roster: 'Roster', newPlayer: 'New Player name', playerName: 'Player name',
   usualRole: 'Usual Role', createPlayer: 'Create Player', savePlayer: 'Save Player', removePlayer: 'Remove from Roster',
   declaredPool: 'Declared Pool', savePool: 'Save Declared Pool', existingPlayer: 'Existing Player', addPlayer: 'Add to Roster',
+  poolRemaining: '{count} Remaining', poolAvailableNow: '{count} Available Now', emptyPool: 'None',
   choosePlayer: 'Choose a Player', playerIdentity: '{name} · {id}', formerMember: 'Former Roster member',
   lineup: 'Lineup', lineupCount: '{count} / {size} Players', saveLineup: 'Save Lineup',
   lineupHint: 'An incomplete Lineup can be completed later. Each Game keeps its own Lineup.',

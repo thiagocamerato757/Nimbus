@@ -70,6 +70,7 @@ class SeriesFormat(Value):
 
 
 class RuleSnapshot(Value):
+    disabled_characters: tuple[str, ...] = ()
     sides: tuple[str, str] | None = None
     sides_coupled: bool = False
     first_pick_side: str | None = None
@@ -199,7 +200,13 @@ class NextTurn(Value):
     kind: ActionKind
 
 
+class PlayerPool(Value):
+    remaining: tuple[str, ...]
+    available_now: tuple[str, ...]
+
+
 class DraftState(Value):
+    disabled_characters: tuple[str, ...] = ()
     status: Literal["Drafting", "Drafted", "Closed", "Voided"] = "Drafting"
     result_pending: bool = False
     missing: tuple[str, ...] = ()
@@ -214,6 +221,7 @@ class DraftState(Value):
 
 class GameView(Game):
     first_selection_prefill: TeamId | None = None
+    player_pools: dict[str, PlayerPool] = Field(default_factory=dict)
     state: DraftState
 
 

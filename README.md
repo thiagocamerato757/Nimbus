@@ -298,6 +298,18 @@ Nimbus is an independent project and is not affiliated with any esports organiza
 Title profiles are validated when the application loads them. Invalid rules or
 Character Catalog entries return a `profile_load_failed` API error naming the
 file and defect; a Character referenced by stored Draft Actions must remain in
-the catalog, even when Retired. Restart Nimbus after editing profile files so an
-in-progress Series keeps using its already checked profile. Existing Series keep
+the catalog, even when Retired. Character Catalog changes are checked live: new
+Characters become available and Retired Characters leave new draft entry choices,
+while historical entries and deliberate historical corrections remain readable.
+Restart Nimbus after editing rule files. Existing Series keep
 their Rule Snapshots when the application loads updated files.
+
+### Disabled Characters
+
+The Workspace Disabled List is managed per Title on Series setup and copied into
+each new Series. Existing Series have their own editable Disabled List; changing
+the Workspace list leaves those Series unchanged. Disabled Characters are excluded
+from Remaining Pool and Available Now. Picking or banning one requires an Override
+with the existing reason workflow. Retired Characters remain in the Catalog and
+historical records, and are excluded from new draft entries. The impact preview
+for editing Series settings is tracked separately in #17.

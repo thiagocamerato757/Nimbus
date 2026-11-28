@@ -6,6 +6,7 @@ import { join } from 'node:path';
 const data = mkdtempSync(join(tmpdir(), 'nimbus-browser-'));
 const profiles = join(data, 'profiles');
 cpSync('../profiles', profiles, { recursive: true });
+cpSync('../tests/fixtures/profiles', profiles, { recursive: true });
 const normal = readFileSync(join(profiles, 'league-of-legends.rules.yaml'), 'utf8');
 writeFileSync(join(profiles, 'warning.rules.yaml'), normal
   .replace('id: league-of-legends', 'id: warning')

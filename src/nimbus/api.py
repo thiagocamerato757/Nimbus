@@ -1,9 +1,11 @@
 """The local HTTP boundary for manual draft entry."""
 
+import os
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
+import yaml
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -13,12 +15,14 @@ from nimbus.engine import (
     correct_action,
     create_replay,
     current_game,
+    derive_player_pool,
     derive_progress,
     derive_state,
     first_selection_prefill,
     game_assignments,
     is_drafted_or_closed,
     next_game_block,
+    propose_settings,
     record_entry,
     record_first_selection,
     replay_block,
@@ -34,13 +38,20 @@ from nimbus.models import (
     OverrideReason,
     Player,
     RosterTeam,
+    RuleSettings,
     Series,
     SeriesFormat,
     SeriesView,
     Team,
     TeamId,
 )
-from nimbus.profiles import ProfileLoadError, TitleProfile, load_profiles
+from nimbus.profiles import (
+    DEFAULT_PROFILE_DIR,
+    ProfileLoadError,
+    TitleProfile,
+    load_profiles,
+    refresh_catalog,
+)
 from nimbus.store import Backup, BackupError, Store, default_data_dir
 from nimbus.workspace import Workspace
 
@@ -61,6 +72,14 @@ class CreateSeries(Request):
     fearless: Fearless | None = None
     patch: str | None = Field(default=None, max_length=100)
     record_type: Literal["official", "scrim"] = "official"
+
+
+class EditSettings(Request):
+    draft_order_id: str | None = None
+    fearless: Fearless | None = None
+    series_format: SeriesFormat | None = None
+    disabled_characters: tuple[str, ...] | None = None
+    rule_settings: RuleSettings | None = None
 
 
 class EditPlayerAssignment(Request):
@@ -155,8 +174,8 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
     app.add_middleware(Workspace, store=store)
     app.add_middleware(LocalAccess)
 
-    # An application loads one checked set of files. Reloading needs a restart;
-    # an edit on disk cannot invalidate a draft already in progress.
+    # Rule settings load at startup; Series retain their own Rule Snapshot.
+    # Catalog changes are checked live, retaining every previously loaded id.
     loaded_profiles: dict[str, TitleProfile] = {}
     profile_error: ProfileLoadError | None = None
     try:
@@ -175,6 +194,12 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
                 for action in (edit.before, edit.after)
                 if action is not None and action.character_id is not None
             )
+        for profile_id, disabled in store.workspace_disabled().items():
+            references.setdefault(profile_id, set()).update(disabled)
+        for stored_series in store.list_series():
+            references[stored_series.profile_id].update(
+                stored_series.rule_snapshot.disabled_characters
+            )
         for player in store.list_players():
             for profile_id, character_ids in player.declared_pools.items():
                 references.setdefault(profile_id, set()).update(character_ids)
@@ -182,9 +207,40 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
     except ProfileLoadError as error:
         profile_error = error
 
+    profile_root = profile_dir or Path(os.environ.get("NIMBUS_PROFILE_DIR", DEFAULT_PROFILE_DIR))
+
+    catalog_paths: dict[str, Path] = {}
+    if profile_error is None:
+        for path in profile_root.glob("*.rules.yaml"):
+            rules = yaml.safe_load(path.read_text())
+            catalog_paths[rules["id"]] = profile_root / rules["catalog_file"]
+
+    def catalog_revision() -> tuple[tuple[str, int, int], ...]:
+        try:
+            return tuple(
+                (str(path), path.stat().st_mtime_ns, path.stat().st_size)
+                for path in sorted(catalog_paths.values())
+            )
+        except OSError as error:
+            raise reject("profile_load_failed", str(error), 500) from error
+
+    revision = catalog_revision()
+
     def profiles() -> dict[str, TitleProfile]:
+        nonlocal revision
         if profile_error is not None:
             raise reject("profile_load_failed", str(profile_error), 500)
+        latest = catalog_revision()
+        if latest != revision:
+            try:
+                refreshed = {
+                    identifier: refresh_catalog(profile, catalog_paths[identifier])
+                    for identifier, profile in loaded_profiles.items()
+                }
+            except ProfileLoadError as error:
+                raise reject("profile_load_failed", str(error), 500) from error
+            loaded_profiles.update(refreshed)
+            revision = latest
         return loaded_profiles
 
     def read(identifier: str) -> Series:
@@ -196,19 +252,31 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
 
     def view(series: Series) -> SeriesView:
         catalog = profiles()[series.profile_id].catalog
-        games = tuple(
-            GameView(
-                **game.model_dump(),
-                state=derive_state(series.rule_snapshot, catalog, series.games, game),
-                first_selection_prefill=first_selection_prefill(
-                    series.rule_snapshot, series.games, game.number
-                ),
+        players = {player.id: player for player in store.list_players()}
+        games = []
+        for game in series.games:
+            state = derive_state(series.rule_snapshot, catalog, series.games, game)
+            games.append(
+                GameView(
+                    **game.model_dump(),
+                    state=state,
+                    player_pools={
+                        player_id: derive_player_pool(
+                            state,
+                            team_id,
+                            players[player_id].declared_pools.get(series.profile_id, ()),
+                        )
+                        for team_id, lineup in game.lineups.items()
+                        for player_id in lineup
+                    },
+                    first_selection_prefill=first_selection_prefill(
+                        series.rule_snapshot, series.games, game.number
+                    ),
+                )
             )
-            for game in series.games
-        )
         return SeriesView(
             **series.model_dump(exclude={"games"}),
-            games=games,
+            games=tuple(games),
             progress=derive_progress(series.rule_snapshot, series.games),
             next_first_selection_holder=first_selection_prefill(
                 series.rule_snapshot,
@@ -283,6 +351,83 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
     def get_profiles() -> list[TitleProfile]:
         return list(profiles().values())
 
+    def checked_disabled(profile_id: str, character_ids: tuple[str, ...]) -> tuple[str, ...]:
+        profile = profiles().get(profile_id)
+        if profile is None:
+            raise reject("profile_not_found", "Title profile not found.", 404)
+        if set(character_ids) - {c.id for c in profile.catalog}:
+            raise reject("unknown_character", "Choose Characters from the Character Catalog.", 422)
+        return tuple(dict.fromkeys(character_ids))
+
+    @app.get("/api/workspace/disabled/{profile_id}")
+    def get_workspace_disabled(profile_id: str) -> tuple[str, ...]:
+        checked_disabled(profile_id, ())
+        return store.workspace_disabled().get(profile_id, ())
+
+    @app.post("/api/workspace/disabled/{profile_id}")
+    def edit_workspace_disabled(profile_id: str, request: EditPool) -> tuple[str, ...]:
+        characters = checked_disabled(profile_id, request.character_ids)
+        store.set_workspace_disabled(profile_id, characters)
+        return characters
+
+    @app.get("/api/series/{identifier}/disabled")
+    def get_series_disabled(identifier: str) -> tuple[str, ...]:
+        return read(identifier).rule_snapshot.disabled_characters
+
+    def settings_proposal(identifier: str, request: EditSettings) -> Series:
+        series = read(identifier)
+        profile = profiles()[series.profile_id]
+        changes = request.model_dump(exclude_none=True)
+        if request.fearless is not None:
+            changes["fearless"] = request.fearless
+        if request.rule_settings is not None:
+            changes["rule_settings"] = request.rule_settings
+        if request.series_format is not None:
+            if request.series_format not in profile.series_formats:
+                raise reject(
+                    "unknown_series_format",
+                    "Choose a Series Format allowed by the Title profile.",
+                    422,
+                )
+            changes["series_format"] = request.series_format
+        if request.disabled_characters is not None:
+            changes["disabled_characters"] = checked_disabled(
+                series.profile_id, request.disabled_characters
+            )
+        if request.draft_order_id is not None:
+            order = next((o for o in profile.draft_orders if o.id == request.draft_order_id), None)
+            if order is None:
+                raise reject(
+                    "unknown_draft_order", "Choose a Draft Order from the Title profile.", 422
+                )
+            changes.pop("draft_order_id")
+            changes["draft_order"] = order
+        try:
+            return propose_settings(series, series.rule_snapshot.model_copy(update=changes))
+        except ValueError as error:
+            messages = {
+                "incompatible_draft_order": "Recorded Draft Actions do not fit this Draft Order.",
+                "series_format_too_small": "The number of non-voided Games exceeds this Series Format's maximum.",
+            }
+            raise reject(str(error), messages[str(error)]) from None
+
+    @app.post("/api/series/{identifier}/settings-preview")
+    def preview_settings(identifier: str, request: EditSettings) -> dict[str, SeriesView]:
+        return {
+            "before": view(read(identifier)),
+            "after": view(settings_proposal(identifier, request)),
+        }
+
+    @app.post("/api/series/{identifier}/settings")
+    def edit_settings(identifier: str, request: EditSettings) -> SeriesView:
+        updated = settings_proposal(identifier, request)
+        store.save_rules(updated)
+        return view(updated)
+
+    @app.post("/api/series/{identifier}/disabled")
+    def edit_series_disabled(identifier: str, request: EditPool) -> SeriesView:
+        return edit_settings(identifier, EditSettings(disabled_characters=request.character_ids))
+
     @app.get("/api/series")
     def get_series_list() -> list[SeriesView]:
         profiles()
@@ -310,6 +455,7 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
             )
         snapshot = snapshot.model_copy(
             update={
+                "disabled_characters": store.workspace_disabled().get(profile.id, ()),
                 "draft_order": order,
                 "series_format": request.series_format or snapshot.series_format,
                 "fearless": request.fearless or snapshot.fearless,
@@ -588,6 +734,7 @@ def create_app(data_dir: Path | None = None, profile_dir: Path | None = None) ->
                 "unknown_character": "Choose an active Character from the Character Catalog.",
                 "cannot_skip_pick": "A pick turn cannot be skipped.",
                 "duplicate_character": "This Character already appears in this Game.",
+                "disabled_character": "This Character is on the Series Disabled List.",
                 "fearless_lock": "Fearless Lock: this Character was picked in an earlier Game.",
                 "wasted_ban": "Wasted ban: the opposing Team cannot pick this Character due to a Fearless Lock.",
             }
